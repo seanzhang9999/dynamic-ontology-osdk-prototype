@@ -22,6 +22,9 @@ class RuntimePolicyAuditTests(unittest.TestCase):
         self.assertIn("late_payment_count_band", result_keys)
         self.assertNotIn("raw_monthly_kwh", result_keys)
         self.assertNotIn("kwh", result_keys)
+        self.assertGreaterEqual(len(jobs[0]["trace"]), 6)
+        self.assertIn("Generated OSDK", jobs[0]["trace"][1]["actor"])
+        self.assertIn("local_rows_scanned", jobs[0]["trace"][4]["facts"])
         self.assertTrue(AuditLog.verify(jobs[0]["receipt"]))
 
     def test_revoked_entitlement_denies_runtime_execution(self):
@@ -65,4 +68,3 @@ class RuntimePolicyAuditTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

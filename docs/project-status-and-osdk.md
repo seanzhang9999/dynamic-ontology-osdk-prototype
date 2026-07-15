@@ -81,10 +81,24 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1 --port 5
 Demo Console 当前按产品流转链路展示：
 
 - 产品工厂：产品版本、用途、动作、原始导出策略。
+- 前端查询工作台：选择示例企业，运行企业用电征信查询。
 - 动态本体：对象、字段、类型、分类分级以及 OSDK 暴露含义。
 - OSDK 调用面：由本体和产品策略生成的 Python OSDK、MCP Tool、输出 schema、Runtime 内部依赖。
+- 执行展示：按 Provider 展示前端选择、OSDK 代码、本体动作、底层字段映射、本地扫描、输出过滤和凭证生成。
 - 执行拓扑：Agent、Catalog、Policy、OSDK、Runtime、Receipt 的调用关系。
 - 执行凭证：用业务语言解释授权、应用、本体/映射/产品版本、输入输出 hash、审计链和签名验证。
+
+Console 顶部的“授权记录”不是用户数量，也不是权限级别。它表示当前内存态 Policy Service 中已经签发的 `Entitlement` 数量。每条 `Entitlement` 绑定：
+
+- 请求方 Agent。
+- 数据产品。
+- 数据主体。
+- Provider。
+- 用途。
+- 输出粒度。
+- 有效期和调用次数。
+
+例如运行一次企业用电征信查询，会分别给 `grid` 和 `integrated-energy` 两个 Provider 签发授权，因此授权记录数通常增加 2。
 
 主要演示接口：
 

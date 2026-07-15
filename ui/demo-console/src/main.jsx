@@ -7,6 +7,7 @@ import {
   BookOpen,
   CheckCircle2,
   Code2,
+  Database,
   Factory,
   FileCheck2,
   KeyRound,
@@ -14,7 +15,9 @@ import {
   Network,
   Play,
   RefreshCcw,
+  Search,
   ShieldCheck,
+  TerminalSquare,
 } from "lucide-react";
 import "./styles.css";
 
@@ -31,11 +34,12 @@ async function api(path, options = {}) {
   return response.json();
 }
 
-function Metric({ label, value, tone = "neutral" }) {
+function Metric({ label, value, tone = "neutral", hint }) {
   return (
     <div className={`metric metric-${tone}`}>
       <span>{label}</span>
       <strong>{value}</strong>
+      {hint && <small>{hint}</small>}
     </div>
   );
 }
@@ -108,6 +112,73 @@ function ProductTable({ products }) {
   );
 }
 
+function QueryWorkbench({
+  enterprises,
+  selectedEnterpriseId,
+  setSelectedEnterpriseId,
+  runQuery,
+  latestResult,
+  busy,
+}) {
+  const isPowerResult = latestResult?.jobs?.some(
+    (job) => job.product_id === "enterprise-energy-credit",
+  );
+  return (
+    <div className="query-workbench">
+      <div className="query-form">
+        <label>
+          查询企业
+          <select
+            value={selectedEnterpriseId}
+            onChange={(event) => setSelectedEnterpriseId(event.target.value)}
+          >
+            {enterprises.map((enterprise) => (
+              <option value={enterprise.id} key={enterprise.id}>
+                {enterprise.name} · {enterprise.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          onClick={runQuery}
+          disabled={Boolean(busy)}
+          title="按所选企业运行企业用电征信查询"
+        >
+          <Search size={18} />
+          运行企业征信查询
+        </button>
+      </div>
+      <div className="query-explain">
+        <strong>这不是在查表。</strong>
+        <span>
+          前端只选择企业并调用产品动作；OSDK 用动态本体找到允许的业务对象和动作，Provider Runtime
+          在数据域内映射到底层表字段并计算，最后只返回产品 schema 允许的结果。
+        </span>
+      </div>
+      {isPowerResult && (
+        <div className="query-result">
+          <div>
+            <span>企业</span>
+            <strong>{latestResult.enterprise_id}</strong>
+          </div>
+          <div>
+            <span>聚合分数</span>
+            <strong>{latestResult.aggregated_credit_score}</strong>
+          </div>
+          <div>
+            <span>风险等级</span>
+            <strong>{latestResult.risk_level}</strong>
+          </div>
+          <div>
+            <span>Provider</span>
+            <strong>{latestResult.provider_count}</strong>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OntologyExplorer({ productPackage }) {
   const ontology = productPackage?.ontology_model;
   const objects = Object.entries(ontology?.object_types || {});
@@ -158,6 +229,74 @@ function OntologyExplorer({ productPackage }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function TraceStep({ step, index }) {
+  const facts = Object.entries(step.facts || {});
+  return (
+    <div className="trace-step">
+      <div className="trace-index">{index + 1}</div>
+      <div className="trace-body">
+        <div className="trace-head">
+          <strong>{step.title}</strong>
+          <span>{step.actor}</span>
+        </div>
+        <p>{step.detail}</p>
+        {step.code && (
+          <div className="mini-code">
+            <pre>{step.code}</pre>
+          </div>
+        )}
+        {facts.length > 0 && (
+          <dl>
+            {facts.map(([key, value]) => (
+              <React.Fragment key={key}>
+                <dt>{key}</dt>
+                <dd>
+                  {typeof value === "string" || typeof value === "number"
+                    ? String(value)
+                    : JSON.stringify(value)}
+                </dd>
+              </React.Fragment>
+            ))}
+          </dl>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExecutionTrace({ latestResult }) {
+  const jobs = latestResult?.jobs || [];
+  const tracedJobs = jobs.filter((job) => job.trace?.length);
+  if (!tracedJobs.length) {
+    return (
+      <div className="empty">
+        选择企业并运行查询后，这里会展示类似执行日志的全过程。
+      </div>
+    );
+  }
+  return (
+    <div className="trace-panel">
+      <div className="trace-summary">
+        <Database size={18} />
+        <span>
+          每个 Provider 都执行同一段 OSDK 合同，但映射到各自不同的底层字段；原始行只在数据域内被扫描。
+        </span>
+      </div>
+      {tracedJobs.map((job) => (
+        <div className="provider-trace" key={job.job_id}>
+          <div className="provider-trace-title">
+            <strong>{job.provider_id}</strong>
+            <span>{job.job_id}</span>
+          </div>
+          {job.trace.map((step, index) => (
+            <TraceStep step={step} index={index} key={`${job.job_id}-${index}`} />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -346,6 +485,7 @@ function App() {
   const [state, setState] = useState(null);
   const [latestResult, setLatestResult] = useState(null);
   const [selectedProductId, setSelectedProductId] = useState("enterprise-energy-credit");
+  const [selectedEnterpriseId, setSelectedEnterpriseId] = useState("91300000DEMO0007");
   const [receiptValid, setReceiptValid] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -400,6 +540,7 @@ function App() {
   const entitlementCount = Object.keys(state?.entitlements || {}).length;
   const auditCount = state?.audit_events?.length || 0;
   const activePackage = state?.product_packages?.[selectedProductId];
+  const enterpriseOptions = state?.enterprise_options || [];
 
   return (
     <main>
@@ -418,7 +559,12 @@ function App() {
 
       <div className="metrics">
         <Metric label="产品" value={productCount} tone="blue" />
-        <Metric label="授权" value={entitlementCount} tone="green" />
+        <Metric
+          label="授权记录"
+          value={entitlementCount}
+          tone="green"
+          hint="Entitlement：某请求方在某用途下对某产品/Provider 的调用许可"
+        />
         <Metric label="作业" value={jobCount} tone="amber" />
         <Metric label="审计事件" value={auditCount} tone="slate" />
       </div>
@@ -429,19 +575,23 @@ function App() {
         onSelect={setSelectedProductId}
       />
 
-      <section className="action-bar">
-        <button
-          onClick={() =>
+      <Section title="前端查询工作台" icon={TerminalSquare} wide>
+        <QueryWorkbench
+          enterprises={enterpriseOptions}
+          selectedEnterpriseId={selectedEnterpriseId}
+          setSelectedEnterpriseId={setSelectedEnterpriseId}
+          latestResult={latestResult}
+          busy={busy}
+          runQuery={() => {
+            setSelectedProductId("enterprise-energy-credit");
             runAction("power", "/demo/run/power-credit", {
-              enterprise_id: "91300000DEMO0007",
-            })
-          }
-          disabled={Boolean(busy)}
-          title="运行企业用电征信双 Provider 链路"
-        >
-          <Play size={18} />
-          企业征信链路
-        </button>
+              enterprise_id: selectedEnterpriseId,
+            });
+          }}
+        />
+      </Section>
+
+      <section className="action-bar">
         <button
           onClick={() => runAction("changchun", "/demo/run/changchun")}
           disabled={Boolean(busy)}
@@ -464,6 +614,10 @@ function App() {
       </section>
 
       <div className="layout">
+        <Section title="执行展示" icon={Play} wide>
+          <ExecutionTrace latestResult={latestResult} />
+        </Section>
+
         <Section title="产品工厂" icon={Factory} wide>
           <ProductTable products={state?.products || {}} />
         </Section>

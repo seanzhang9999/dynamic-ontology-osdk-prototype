@@ -108,6 +108,7 @@ class ExecutionJob(BaseModel):
     provider_id: str
     status: Literal["success", "denied", "failed"]
     result: Optional[Dict[str, Any]] = None
+    trace: List[Dict[str, Any]] = Field(default_factory=list)
     receipt: Optional[ExecutionReceipt] = None
     policy_decision: PolicyDecision
     created_at: datetime = Field(default_factory=utc_now)

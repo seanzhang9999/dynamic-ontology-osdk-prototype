@@ -36,6 +36,17 @@ button:disabled {
   opacity: 0.55;
 }
 
+select {
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #1e293b;
+  font: inherit;
+  min-height: 40px;
+  min-width: 280px;
+  padding: 0 10px;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;
@@ -126,6 +137,13 @@ h2 {
   margin-top: 4px;
 }
 
+.metric small {
+  color: #64748b;
+  display: block;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
 .metric-blue {
   border-left-color: #2563eb;
 }
@@ -152,6 +170,69 @@ h2 {
   gap: 10px;
   margin-bottom: 16px;
   padding: 12px;
+}
+
+.query-workbench {
+  display: grid;
+  gap: 12px;
+}
+
+.query-form {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.query-form label {
+  color: #475569;
+  display: grid;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.query-explain {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+}
+
+.query-explain strong {
+  flex: 0 0 auto;
+}
+
+.query-explain span {
+  color: #475569;
+}
+
+.query-result {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.query-result div {
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.query-result span {
+  color: #166534;
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.query-result strong {
+  display: block;
+  font-size: 18px;
+  overflow-wrap: anywhere;
 }
 
 .product-switcher {
@@ -306,6 +387,119 @@ h2 {
   background: #94a3b8;
   height: 2px;
   min-width: 20px;
+}
+
+.trace-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.trace-summary {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #475569;
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.provider-trace {
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.provider-trace-title {
+  align-items: center;
+  background: #1e293b;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.provider-trace-title span {
+  color: #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.trace-step {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+}
+
+.trace-step + .trace-step {
+  border-top: 1px solid #e2e8f0;
+}
+
+.trace-index {
+  align-items: center;
+  background: #f8fafc;
+  color: #0f766e;
+  display: flex;
+  font-size: 18px;
+  font-weight: 900;
+  justify-content: center;
+}
+
+.trace-body {
+  min-width: 0;
+  padding: 12px;
+}
+
+.trace-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.trace-head span {
+  background: #eef2ff;
+  border-radius: 999px;
+  color: #3730a3;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 8px;
+}
+
+.trace-body p {
+  color: #475569;
+  margin: 6px 0 0;
+}
+
+.trace-body dl {
+  display: grid;
+  gap: 6px 10px;
+  grid-template-columns: 190px minmax(0, 1fr);
+  margin: 10px 0 0;
+}
+
+.trace-body dt {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trace-body dd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.mini-code {
+  background: #0f172a;
+  border-radius: 8px;
+  color: #e2e8f0;
+  margin-top: 10px;
+  overflow-x: auto;
+  padding: 10px;
 }
 
 .explain-line {
@@ -609,6 +803,7 @@ pre {
   .metrics,
   .layout,
   .governance,
+  .query-result,
   .object-grid,
   .osdk-layout,
   .osdk-facts,
@@ -627,5 +822,13 @@ pre {
   .explain-line strong {
     display: block;
     margin-bottom: 6px;
+  }
+
+  .query-explain {
+    display: block;
+  }
+
+  .trace-body dl {
+    grid-template-columns: 1fr;
   }
 }

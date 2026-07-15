@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import math
 from statistics import mean, pstdev
 from typing import Any, Dict, List
 from uuid import uuid4
 
 from .audit import AuditLog, sha256_json
 from .compiler import compile_all, compile_product
-from .fixtures import PROVIDERS, make_changchun_assets, make_power_records, product_definitions
+from .fixtures import PROVIDERS, make_changchun_assets, make_power_records
 from .geo import bbox_intersects, expand_bbox, line_bbox, polygon_bbox
 from .models import ApplicationManifest, ExecutionJob, PolicyDecision
 from .policy import EntitlementStore
@@ -57,7 +56,21 @@ class TrustedDataDemo:
             "jobs": {key: job.model_dump(mode="json") for key, job in self.jobs.items()},
             "audit_events": self.audit.events(),
             "coordinate_core": self.coordinate_core,
+            "enterprise_options": self.enterprise_options(),
         }
+
+    def enterprise_options(self) -> List[Dict[str, Any]]:
+        enterprise_ids = sorted(
+            {record["enterprise_id"] for record in self.power_data["grid"]}
+        )
+        return [
+            {
+                "id": enterprise_id,
+                "name": f"示例企业 {enterprise_id[-4:]}",
+                "description": "合成企业，用于演示授权后企业用电征信查询",
+            }
+            for enterprise_id in enterprise_ids[:24]
+        ]
 
     def recompile_coordinate_core(self) -> Dict[str, Any]:
         self.coordinate_core = True
@@ -132,6 +145,14 @@ class TrustedDataDemo:
                 product_id=product_id,
                 provider_id=provider_id,
                 status="denied",
+                trace=[
+                    {
+                        "title": "Policy 拒绝执行",
+                        "actor": "Policy Service",
+                        "detail": f"授权校验失败：{decision.reason}",
+                        "facts": {"entitlement_id": entitlement_id},
+                    }
+                ],
                 policy_decision=decision,
             )
             self.jobs[job.job_id] = job
@@ -169,6 +190,72 @@ class TrustedDataDemo:
             ),
         }
         product = self.products[product_id]["product_manifest"]
+        product_package = self.products[product_id]
+        source_mapping = {
+            "grid": {
+                "EnergyUsage.kwh": "monthly_usage.total_kwh",
+                "BillingRecord.late_days": "paid_date - due_date",
+                "Enterprise.enterprise_id": "customer.unified_credit_code",
+            },
+            "integrated-energy": {
+                "EnergyUsage.kwh": "billing.energy_qty",
+                "BillingRecord.late_days": "settle_date - deadline",
+                "Enterprise.enterprise_id": "enterprise.enterprise_no",
+            },
+        }[provider_id]
+        trace = [
+            {
+                "title": "前端选择企业并发起查询",
+                "actor": "Demo Console",
+                "detail": "用户选择企业后，前端只提交企业 ID 和用途请求，不提交 SQL 或底层字段。",
+                "facts": {
+                    "enterprise_id": enterprise_id,
+                    "product": product_id,
+                    "months": months,
+                },
+            },
+            {
+                "title": "应用获得 Product OSDK 调用面",
+                "actor": "Generated OSDK",
+                "detail": "OSDK 由动态本体和产品投影生成，只暴露命名动作。",
+                "code": product_package["python_osdk"],
+            },
+            {
+                "title": "OSDK 调用动态本体动作",
+                "actor": "Product OSDK",
+                "detail": "compute_credit_features 绑定到本体动作，动作声明了内部依赖字段。",
+                "facts": product_package["runtime_binding"]["internal_dependencies"][
+                    "compute_credit_features"
+                ],
+            },
+            {
+                "title": "Runtime 将本体字段映射到底层数据",
+                "actor": PROVIDERS[provider_id]["display_name"],
+                "detail": "映射只在 Provider 数据域内使用，外部应用看不到表名和连接信息。",
+                "facts": source_mapping,
+            },
+            {
+                "title": "Provider 本地扫描并计算特征",
+                "actor": "Provider Runtime",
+                "detail": "Runtime 在本地读取合成明细行，计算稳定性和逾期区间；原始行不进入响应。",
+                "facts": {
+                    "local_rows_scanned": len(records),
+                    "data_window": f"{records[0]['period']}..{records[-1]['period']}"
+                    if records
+                    else "empty",
+                    "compute_only_fields": ["EnergyUsage.kwh", "BillingRecord.late_days"],
+                },
+            },
+            {
+                "title": "输出过滤为产品 schema",
+                "actor": "Output Filter",
+                "detail": "只返回 EXTERNAL_RESULT 或允许的摘要字段，隐藏原始用电序列和缴费流水。",
+                "facts": {
+                    "returned_fields": list(result.keys()),
+                    "blocked_fields": ["raw_monthly_kwh", "kwh", "source_row_id"],
+                },
+            },
+        ]
         receipt = self.audit.create_receipt(
             purpose=product["purpose"],
             requester_agent=app.requester_agent,
@@ -193,8 +280,22 @@ class TrustedDataDemo:
             provider_id=provider_id,
             status="success",
             result=result,
+            trace=trace,
             receipt=receipt,
             policy_decision=decision,
+        )
+        job.trace.append(
+            {
+                "title": "生成执行凭证",
+                "actor": "Audit Service",
+                "detail": "凭证记录授权、应用、本体、映射、产品版本、输入输出 hash，并用 Ed25519 签名。",
+                "facts": {
+                    "receipt_id": receipt.request_id,
+                    "input_hash": receipt.input_hash,
+                    "output_hash": receipt.output_hash,
+                    "signature_algorithm": receipt.signature_algorithm,
+                },
+            }
         )
         self.jobs[job.job_id] = job
         return job
