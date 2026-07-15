@@ -7,11 +7,11 @@ import {
   Database,
   FileCheck2,
   Hammer,
-  KeyRound,
   MapPinned,
   RefreshCcw,
   Search,
   ShieldCheck,
+  Trash2,
   Zap,
 } from "lucide-react";
 import "./styles.css";
@@ -255,6 +255,7 @@ function ResultGrid({ items }) {
 function OntologyPanel({ productPackage }) {
   const ontology = productPackage?.ontology_model;
   const objects = Object.entries(ontology?.object_types || {});
+  const links = Object.entries(ontology?.link_types || {});
   if (!ontology) return <div className="empty">等待产品包加载。</div>;
   return (
     <div className="ontology-panel">
@@ -264,6 +265,7 @@ function OntologyPanel({ productPackage }) {
           本体对象定义了 OSDK 可引用的业务语义；字段暴露级别决定能否被读、能否输出、或只能在 Runtime 内计算。
         </span>
       </div>
+      <OntologyGraph links={links} />
       <div className="object-list">
         {objects.map(([objectName, objectType]) => (
           <div className="object-card" key={objectName}>
@@ -287,6 +289,30 @@ function OntologyPanel({ productPackage }) {
                 </div>
               ))}
             </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OntologyGraph({ links }) {
+  if (!links.length) {
+    return <div className="empty">当前产品包未声明本体关系。</div>;
+  }
+  return (
+    <div className="relation-graph" aria-label="本体关系图">
+      <div className="relation-graph-title">
+        <strong>本体关系图</strong>
+        <span>OSDK 动作通过这些语义关系跨对象计算，但不会暴露底层表连接。</span>
+      </div>
+      <div className="relation-rows">
+        {links.map(([name, link]) => (
+          <div className="relation-row" key={name}>
+            <span className="graph-node">{link.from}</span>
+            <span className="graph-edge">{link.label || name}</span>
+            <span className="graph-node">{link.to}</span>
+            <small>{link.cardinality}</small>
           </div>
         ))}
       </div>
@@ -320,13 +346,58 @@ function DataTables({ rows }) {
           ))}
         </tbody>
       </table>
+      <div className="data-preview-list">
+        {rows.map((row) => (
+          <div className="data-preview-card" key={`preview-${row.table}`}>
+            <div className="data-preview-title">
+              <strong>{row.table}</strong>
+              <span>数据样例</span>
+            </div>
+            <PreviewTable rows={row.preview_rows || []} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-function TaskPanel({ activeTab, task, latestResult, productPackage }) {
-  const traces = tracesFor(activeTab, latestResult);
-  const runningSteps = task?.status === "running" ? task.steps : [];
+function PreviewTable({ rows }) {
+  if (!rows.length) return <div className="empty compact">暂无样例行，运行任务后会出现。</div>;
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  return (
+    <div className="preview-table-wrap">
+      <table className="preview-table">
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column}>{column}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {columns.map((column) => (
+                <td key={column}>{formatCell(row[column])}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatCell(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function TaskPanel({ activeTab, task, latestResult, productPackage, cleared, onClear }) {
+  const traces = cleared ? [] : tracesFor(activeTab, latestResult);
+  const timelineSteps = cleared ? [] : task?.steps || [];
+  const hasContent = timelineSteps.length > 0 || traces.length > 0;
   return (
     <aside className="task-panel">
       <div className="task-header">
@@ -334,21 +405,37 @@ function TaskPanel({ activeTab, task, latestResult, productPackage }) {
           <span>实时运行情况</span>
           <strong>{TABS.find((tab) => tab.id === activeTab)?.label}</strong>
         </div>
-        <Activity size={20} />
+        <div className="task-header-actions">
+          <Activity size={20} />
+          <button
+            className="clear-button"
+            disabled={!hasContent || task?.status === "running"}
+            onClick={onClear}
+            title="清空当前 Tab 的运行轨迹"
+          >
+            <Trash2 size={14} />
+            清空
+          </button>
+        </div>
       </div>
 
-      {runningSteps.length > 0 ? (
-        <div className="live-steps">
-          {runningSteps.map((step, index) => (
-            <LiveStep step={step} index={index} key={step.title} />
-          ))}
-        </div>
-      ) : traces.length > 0 ? (
-        <TraceList traces={traces} />
-      ) : (
+      {!hasContent && (
         <div className="empty dark">
           左侧提交任务后，这里会显示从前端查询、OSDK 调用、本体映射、底层数据读取到凭证签名的全过程。
         </div>
+      )}
+      {timelineSteps.length > 0 && (
+        <div className="live-steps">
+          {timelineSteps.map((step, index) => (
+            <LiveStep step={step} index={index} key={step.title} />
+          ))}
+        </div>
+      )}
+      {traces.length > 0 && (
+        <>
+          <div className="trace-subtitle">执行明细</div>
+          <TraceList traces={traces} />
+        </>
       )}
 
       <div className="osdk-compact">
@@ -482,6 +569,7 @@ function App() {
   });
   const [latestByTab, setLatestByTab] = useState({});
   const [liveTaskByTab, setLiveTaskByTab] = useState({});
+  const [taskPanelClearedByTab, setTaskPanelClearedByTab] = useState({});
   const [receiptValid, setReceiptValid] = useState(null);
   const [error, setError] = useState("");
 
@@ -519,6 +607,7 @@ function App() {
 
   async function runWithTimeline(tabId, plannedSteps, request) {
     setError("");
+    setTaskPanelClearedByTab((current) => ({ ...current, [tabId]: false }));
     const seed = plannedSteps.map((step) => ({ ...step, status: "pending" }));
     setLiveTaskByTab((current) => ({
       ...current,
@@ -559,6 +648,11 @@ function App() {
         },
       }));
     }
+  }
+
+  function clearTaskPanel() {
+    setLiveTaskByTab((current) => ({ ...current, [activeTab]: null }));
+    setTaskPanelClearedByTab((current) => ({ ...current, [activeTab]: true }));
   }
 
   const isBusy = liveTask?.status === "running";
@@ -693,6 +787,8 @@ function App() {
             task={liveTask}
             latestResult={latestResult}
             productPackage={activePackage}
+            cleared={Boolean(taskPanelClearedByTab[activeTab])}
+            onClear={clearTaskPanel}
           />
           <ReceiptStatus receipt={latestReceipt} valid={receiptValid} />
         </div>

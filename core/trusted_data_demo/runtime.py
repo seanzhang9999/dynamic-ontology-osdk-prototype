@@ -74,36 +74,114 @@ class TrustedDataDemo:
         ]
 
     def source_tables(self) -> Dict[str, List[Dict[str, Any]]]:
+        grid_preview = self.power_data["grid"][:4]
+        integrated_preview = self.power_data["integrated-energy"][:4]
+        pipeline_preview = self.changchun_assets["pipeline_segments"][:4]
+        monitoring_preview = [
+            {"asset_type": asset_type, **summary}
+            for asset_type, summary in self.changchun_assets["monitoring_summary"].items()
+        ]
+        product_preview = [
+            {
+                "product_id": product_id,
+                "product_version": package["product_manifest"]["product_version"],
+                "ontology_version": (
+                    package["product_manifest"]["ontology"]["id"]
+                    + "@"
+                    + package["product_manifest"]["ontology"]["version"]
+                ),
+                "actions": ", ".join(package["product_manifest"]["actions"]),
+                "readable_fields": len(package["product_manifest"]["readable_fields"]),
+            }
+            for product_id, package in self.products.items()
+        ]
+        entitlement_preview = [
+            {
+                "entitlement_id": entitlement.entitlement_id,
+                "product_id": entitlement.product_id,
+                "provider_id": entitlement.provider_id,
+                "purpose": entitlement.purpose,
+                "used_calls": entitlement.used_calls,
+                "max_calls": entitlement.max_calls,
+                "revoked": entitlement.revoked,
+            }
+            for entitlement in list(self.policy.all().values())[-4:]
+        ]
+        audit_preview = [
+            {
+                "event_hash": event["hash"],
+                "request_id": event["receipt"]["request_id"],
+                "product_version": event["receipt"]["product_version"],
+                "output_hash": event["receipt"]["output_hash"],
+            }
+            for event in self.audit.events()[-4:]
+        ]
         grid_rows = [
             {
                 "table": "grid.monthly_usage",
                 "business_object": "EnergyUsage",
-                "fields": "usage_month, total_kwh, unified_credit_code",
-                "sample_rows": 12,
+                "fields": "usage_month, total_kwh, unified_credit_code, source_row_id",
+                "sample_rows": len(self.power_data["grid"]),
                 "osdk_exposure": "kwh=COMPUTE_ONLY, period=INTERNAL_ONLY",
+                "preview_rows": [
+                    {
+                        "unified_credit_code": row["enterprise_id"],
+                        "usage_month": row["period"],
+                        "total_kwh": row["kwh"],
+                        "source_row_id": row["source_row_id"],
+                    }
+                    for row in grid_preview
+                ],
             },
             {
                 "table": "grid.payment",
                 "business_object": "BillingRecord",
-                "fields": "status, paid_date, due_date",
-                "sample_rows": 12,
+                "fields": "payment_status, late_days, source_row_id",
+                "sample_rows": len(self.power_data["grid"]),
                 "osdk_exposure": "late_days=AGGREGATE_ONLY",
+                "preview_rows": [
+                    {
+                        "unified_credit_code": row["enterprise_id"],
+                        "payment_status": row["payment_status"],
+                        "late_days": row["late_days"],
+                        "source_row_id": row["source_row_id"],
+                    }
+                    for row in grid_preview
+                ],
             },
         ]
         energy_rows = [
             {
                 "table": "integrated_energy.billing",
                 "business_object": "EnergyUsage",
-                "fields": "period_code, energy_qty, enterprise_no",
-                "sample_rows": 12,
+                "fields": "period_code, energy_qty, enterprise_no, source_row_id",
+                "sample_rows": len(self.power_data["integrated-energy"]),
                 "osdk_exposure": "energy_qty maps to EnergyUsage.kwh",
+                "preview_rows": [
+                    {
+                        "enterprise_no": row["enterprise_id"],
+                        "period_code": row["period"].replace("-", ""),
+                        "energy_qty": row["kwh"],
+                        "source_row_id": row["source_row_id"],
+                    }
+                    for row in integrated_preview
+                ],
             },
             {
                 "table": "integrated_energy.charge",
                 "business_object": "BillingRecord",
-                "fields": "settle_status, settle_date, deadline",
-                "sample_rows": 12,
+                "fields": "settle_status, late_days, source_row_id",
+                "sample_rows": len(self.power_data["integrated-energy"]),
                 "osdk_exposure": "late_days=AGGREGATE_ONLY",
+                "preview_rows": [
+                    {
+                        "enterprise_no": row["enterprise_id"],
+                        "settle_status": row["payment_status"],
+                        "late_days": row["late_days"],
+                        "source_row_id": row["source_row_id"],
+                    }
+                    for row in integrated_preview
+                ],
             },
         ]
         changchun_rows = [
@@ -113,6 +191,16 @@ class TrustedDataDemo:
                 "fields": "geometry, asset_type, owner, depth",
                 "sample_rows": len(self.changchun_assets["pipeline_segments"]),
                 "osdk_exposure": "exact_coordinates=COMPUTE_ONLY after core upgrade",
+                "preview_rows": [
+                    {
+                        "segment_id": row["segment_id"],
+                        "asset_type": row["asset_type"],
+                        "geometry": row["line"],
+                        "depth": row["depth"],
+                        "material": row["material"],
+                    }
+                    for row in pipeline_preview
+                ],
             },
             {
                 "table": "iot.monitoring_summary",
@@ -120,6 +208,7 @@ class TrustedDataDemo:
                 "fields": "asset_type, alerts_30d, quality",
                 "sample_rows": len(self.changchun_assets["monitoring_summary"]),
                 "osdk_exposure": "quality_summary=EXTERNAL_RESULT",
+                "preview_rows": monitoring_preview,
             },
             {
                 "table": "ops.historical_hazards",
@@ -127,6 +216,7 @@ class TrustedDataDemo:
                 "fields": "asset_type, count, severity",
                 "sample_rows": len(self.changchun_assets["historical_hazards"]),
                 "osdk_exposure": "used only by local risk action",
+                "preview_rows": self.changchun_assets["historical_hazards"],
             },
         ]
         ops_rows = [
@@ -136,6 +226,7 @@ class TrustedDataDemo:
                 "fields": "ontology_version, product_version, actions, outputs",
                 "sample_rows": len(self.products),
                 "osdk_exposure": "source of generated Product OSDK",
+                "preview_rows": product_preview,
             },
             {
                 "table": "policy.entitlements",
@@ -143,6 +234,7 @@ class TrustedDataDemo:
                 "fields": "purpose, requester_agent, provider_id, expires_at",
                 "sample_rows": len(self.policy.all()),
                 "osdk_exposure": "checked before every Runtime action",
+                "preview_rows": entitlement_preview,
             },
             {
                 "table": "audit.hash_chain_events",
@@ -150,6 +242,7 @@ class TrustedDataDemo:
                 "fields": "input_hash, output_hash, previous_event_hash, signature",
                 "sample_rows": len(self.audit.events()),
                 "osdk_exposure": "verifies result provenance",
+                "preview_rows": audit_preview,
             },
         ]
         return {

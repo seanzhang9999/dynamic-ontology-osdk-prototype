@@ -70,6 +70,7 @@ def _ontology_model(doir: Dict[str, Any], product: Dict[str, Any]) -> Dict[str, 
     return {
         "ontology": doir["ontology"],
         "object_types": doir.get("object_types", {}),
+        "link_types": doir.get("link_types", {}),
         "query_types": doir.get("query_types", {}),
         "action_types": doir.get("action_types", {}),
         "product_projection": {

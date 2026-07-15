@@ -16,6 +16,7 @@ class CompilerTests(unittest.TestCase):
 
         self.assertIn("object_types", package.ontology_model)
         self.assertIn("EnergyUsage", package.ontology_model["object_types"])
+        self.assertIn("EnterpriseUsage", package.ontology_model["link_types"])
         self.assertNotIn(("EnergyUsage", "raw_monthly_kwh"), readable)
         self.assertNotIn(("EnergyUsage", "kwh"), readable)
         self.assertIn("credit_score", package.product_schema["properties"])

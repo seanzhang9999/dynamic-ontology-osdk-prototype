@@ -193,6 +193,26 @@ def build_power_doir() -> Dict[str, Any]:
                 }
             },
         },
+        "link_types": {
+            "EnterpriseUsage": {
+                "from": "Enterprise",
+                "to": "EnergyUsage",
+                "label": "has monthly usage",
+                "cardinality": "one_to_many",
+            },
+            "EnterpriseBilling": {
+                "from": "Enterprise",
+                "to": "BillingRecord",
+                "label": "has billing records",
+                "cardinality": "one_to_many",
+            },
+            "EnterpriseCreditResult": {
+                "from": "Enterprise",
+                "to": "CreditResult",
+                "label": "produces credit result",
+                "cardinality": "one_to_one",
+            },
+        },
         "query_types": {
             "energy_usage_summary": {
                 "returns": "CreditResult",
@@ -282,6 +302,26 @@ def build_changchun_doir(coordinate_core: bool = False) -> Dict[str, Any]:
                 }
             },
         },
+        "link_types": {
+            "ProjectIntersectsPipeline": {
+                "from": "ExcavationProject",
+                "to": "PipelineSegment",
+                "label": "spatially intersects",
+                "cardinality": "many_to_many",
+            },
+            "PipelineFeedsRisk": {
+                "from": "PipelineSegment",
+                "to": "RiskAssessment",
+                "label": "contributes to risk",
+                "cardinality": "many_to_one",
+            },
+            "ProjectRiskAssessment": {
+                "from": "ExcavationProject",
+                "to": "RiskAssessment",
+                "label": "produces assessment",
+                "cardinality": "one_to_one",
+            },
+        },
         "action_types": {
             "assess_excavation_risk": {
                 "depends_on": [
@@ -339,4 +379,3 @@ def product_definitions() -> Dict[str, Dict[str, Any]]:
             ],
         },
     }
-
