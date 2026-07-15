@@ -57,6 +57,7 @@ class TrustedDataDemo:
             "audit_events": self.audit.events(),
             "coordinate_core": self.coordinate_core,
             "enterprise_options": self.enterprise_options(),
+            "source_tables": self.source_tables(),
         }
 
     def enterprise_options(self) -> List[Dict[str, Any]]:
@@ -72,12 +73,143 @@ class TrustedDataDemo:
             for enterprise_id in enterprise_ids[:24]
         ]
 
+    def source_tables(self) -> Dict[str, List[Dict[str, Any]]]:
+        grid_rows = [
+            {
+                "table": "grid.monthly_usage",
+                "business_object": "EnergyUsage",
+                "fields": "usage_month, total_kwh, unified_credit_code",
+                "sample_rows": 12,
+                "osdk_exposure": "kwh=COMPUTE_ONLY, period=INTERNAL_ONLY",
+            },
+            {
+                "table": "grid.payment",
+                "business_object": "BillingRecord",
+                "fields": "status, paid_date, due_date",
+                "sample_rows": 12,
+                "osdk_exposure": "late_days=AGGREGATE_ONLY",
+            },
+        ]
+        energy_rows = [
+            {
+                "table": "integrated_energy.billing",
+                "business_object": "EnergyUsage",
+                "fields": "period_code, energy_qty, enterprise_no",
+                "sample_rows": 12,
+                "osdk_exposure": "energy_qty maps to EnergyUsage.kwh",
+            },
+            {
+                "table": "integrated_energy.charge",
+                "business_object": "BillingRecord",
+                "fields": "settle_status, settle_date, deadline",
+                "sample_rows": 12,
+                "osdk_exposure": "late_days=AGGREGATE_ONLY",
+            },
+        ]
+        changchun_rows = [
+            {
+                "table": "gis.pipeline_layer",
+                "business_object": "PipelineSegment",
+                "fields": "geometry, asset_type, owner, depth",
+                "sample_rows": len(self.changchun_assets["pipeline_segments"]),
+                "osdk_exposure": "exact_coordinates=COMPUTE_ONLY after core upgrade",
+            },
+            {
+                "table": "iot.monitoring_summary",
+                "business_object": "MonitoringSignal",
+                "fields": "asset_type, alerts_30d, quality",
+                "sample_rows": len(self.changchun_assets["monitoring_summary"]),
+                "osdk_exposure": "quality_summary=EXTERNAL_RESULT",
+            },
+            {
+                "table": "ops.historical_hazards",
+                "business_object": "HazardEvent",
+                "fields": "asset_type, count, severity",
+                "sample_rows": len(self.changchun_assets["historical_hazards"]),
+                "osdk_exposure": "used only by local risk action",
+            },
+        ]
+        ops_rows = [
+            {
+                "table": "doir_registry.product_versions",
+                "business_object": "ProductProjection",
+                "fields": "ontology_version, product_version, actions, outputs",
+                "sample_rows": len(self.products),
+                "osdk_exposure": "source of generated Product OSDK",
+            },
+            {
+                "table": "policy.entitlements",
+                "business_object": "Entitlement",
+                "fields": "purpose, requester_agent, provider_id, expires_at",
+                "sample_rows": len(self.policy.all()),
+                "osdk_exposure": "checked before every Runtime action",
+            },
+            {
+                "table": "audit.hash_chain_events",
+                "business_object": "ExecutionReceipt",
+                "fields": "input_hash, output_hash, previous_event_hash, signature",
+                "sample_rows": len(self.audit.events()),
+                "osdk_exposure": "verifies result provenance",
+            },
+        ]
+        return {
+            "power-credit": grid_rows + energy_rows,
+            "changchun-risk": changchun_rows,
+            "ontology-ops": ops_rows,
+        }
+
     def recompile_coordinate_core(self) -> Dict[str, Any]:
+        before = self.products["changchun-excavation-risk"]["product_manifest"]
         self.coordinate_core = True
         self.products["changchun-excavation-risk"] = compile_product(
             "changchun-excavation-risk", coordinate_core=True
         ).model_dump(mode="json")
-        return self.products["changchun-excavation-risk"]
+        after = self.products["changchun-excavation-risk"]["product_manifest"]
+        return {
+            "result": {
+                "operation": "coordinate_core_recompile",
+                "coordinate_core": self.coordinate_core,
+                "version_before": before["product_version"],
+                "version_after": after["product_version"],
+                "readable_fields_after": after["readable_fields"],
+            },
+            "trace": [
+                {
+                    "title": "接收动态本体运维请求",
+                    "actor": "OntologyOps Console",
+                    "detail": "运维人员将管线精确坐标升级为核心数据，触发产品影响分析。",
+                    "facts": {"field": "PipelineSegment.exact_coordinates"},
+                },
+                {
+                    "title": "更新分类分级策略",
+                    "actor": "DOIR Registry",
+                    "detail": "exact_coordinates 从 INTERNAL_ONLY 转为 COMPUTE_ONLY，不允许直接出现在 OSDK 读取接口。",
+                    "facts": {"new_exposure": "COMPUTE_ONLY"},
+                },
+                {
+                    "title": "重新编译产品投影",
+                    "actor": "Product Compiler",
+                    "detail": "Compiler 重新裁剪 OSDK 表面，保留 assess_excavation_risk 动作，移除坐标读取面。",
+                    "facts": {
+                        "version_before": before["product_version"],
+                        "version_after": after["product_version"],
+                    },
+                },
+                {
+                    "title": "发布新 Product OSDK 合同",
+                    "actor": "OSDK Generator",
+                    "detail": "Runtime 仍可在数据域内使用坐标计算风险，外部只看到风险摘要。",
+                    "facts": {
+                        "actions": after["actions"],
+                        "readable_fields": [
+                            f"{field['object']}.{field['property']}"
+                            for field in after["readable_fields"]
+                        ],
+                    },
+                },
+            ],
+            "product_package": self.products["changchun-excavation-risk"],
+        }
 
     def create_entitlement(
         self,
@@ -353,6 +485,14 @@ class TrustedDataDemo:
                 product_id=product_id,
                 provider_id=provider_id,
                 status="denied",
+                trace=[
+                    {
+                        "title": "Policy 拒绝执行",
+                        "actor": "Policy Service",
+                        "detail": f"授权校验失败：{decision.reason}",
+                        "facts": {"entitlement_id": entitlement_id},
+                    }
+                ],
                 policy_decision=decision,
             )
             self.jobs[job.job_id] = job
@@ -394,6 +534,69 @@ class TrustedDataDemo:
             },
         }
         product = self.products[product_id]["product_manifest"]
+        product_package = self.products[product_id]
+        trace = [
+            {
+                "title": "前端提交开挖风险请求",
+                "actor": "Demo Console",
+                "detail": "用户提交工程 ID、开挖深度、施工方式和 GeoJSON 区域，不请求管线坐标。",
+                "facts": {
+                    "project_id": project_id,
+                    "excavation_depth": excavation_depth,
+                    "construction_method": construction_method,
+                },
+            },
+            {
+                "title": "应用获得 Product OSDK 调用面",
+                "actor": "Generated OSDK",
+                "detail": "OSDK 只暴露 assess_excavation_risk 动作和风险摘要输出。",
+                "code": product_package["python_osdk"],
+            },
+            {
+                "title": "OSDK 调用动态本体动作",
+                "actor": "Product OSDK",
+                "detail": "assess_excavation_risk 绑定到 PipelineSegment 与 ExcavationProject 本体对象。",
+                "facts": product_package["runtime_binding"]["internal_dependencies"][
+                    "assess_excavation_risk"
+                ],
+            },
+            {
+                "title": "Runtime 将本体映射到 GIS/IoT 底层表",
+                "actor": "长春城市生命线 Provider Runtime",
+                "detail": "精确坐标和监测摘要只在数据域内用于空间计算，不返回给请求方。",
+                "facts": {
+                    "PipelineSegment.exact_coordinates": "gis.pipeline_layer.geometry",
+                    "PipelineSegment.asset_type": "gis.pipeline_layer.asset_type",
+                    "MonitoringSignal.summary": "iot.monitoring_summary",
+                },
+            },
+            {
+                "title": "本地空间规则计算风险",
+                "actor": "Provider Runtime",
+                "detail": "Runtime 对开挖范围做 bbox-buffer 相交判断，并结合深度、施工方式和资产权重评分。",
+                "facts": {
+                    "pipeline_segments_scanned": len(
+                        self.changchun_assets["pipeline_segments"]
+                    ),
+                    "affected_segment_count": len(affected),
+                    "risk_score": round(risk_score, 3),
+                },
+            },
+            {
+                "title": "输出过滤为风险摘要",
+                "actor": "Output Filter",
+                "detail": "只返回风险等级、影响资产类型、段数和建议，不返回坐标、拓扑或业主明细。",
+                "facts": {
+                    "returned_fields": list(result.keys()),
+                    "blocked_fields": [
+                        "exact_coordinates",
+                        "segment_id",
+                        "owner_detail",
+                        "raw_monitoring_series",
+                    ],
+                },
+            },
+        ]
         receipt = self.audit.create_receipt(
             purpose=product["purpose"],
             requester_agent=app.requester_agent,
@@ -422,15 +625,34 @@ class TrustedDataDemo:
             provider_id=provider_id,
             status="success",
             result=result,
+            trace=trace,
             receipt=receipt,
             policy_decision=decision,
+        )
+        job.trace.append(
+            {
+                "title": "生成执行凭证",
+                "actor": "Audit Service",
+                "detail": "凭证记录授权、应用、本体、映射、产品版本、输入输出 hash，并用 Ed25519 签名。",
+                "facts": {
+                    "receipt_id": receipt.request_id,
+                    "input_hash": receipt.input_hash,
+                    "output_hash": receipt.output_hash,
+                    "signature_algorithm": receipt.signature_algorithm,
+                },
+            }
         )
         self.jobs[job.job_id] = job
         return job
 
-    def run_changchun_demo(self) -> Dict[str, Any]:
+    def run_changchun_demo(
+        self,
+        *,
+        project_id: str = "CC-2026-001",
+        excavation_depth: float = 3.5,
+        construction_method: str = "MECHANICAL",
+    ) -> Dict[str, Any]:
         product_id = "changchun-excavation-risk"
-        project_id = "CC-2026-001"
         entitlement = self.create_entitlement(
             product_id=product_id,
             provider_id="changchun",
@@ -452,8 +674,8 @@ class TrustedDataDemo:
         job = self.execute_changchun_risk(
             entitlement_id=entitlement["entitlement_id"],
             excavation_area=area,
-            excavation_depth=3.5,
-            construction_method="MECHANICAL",
+            excavation_depth=excavation_depth,
+            construction_method=construction_method,
             project_id=project_id,
             app=CHANGCHUN_APP,
         )

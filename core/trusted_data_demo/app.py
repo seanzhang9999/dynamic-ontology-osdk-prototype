@@ -123,8 +123,13 @@ def create_app():
         return demo.run_power_credit_demo(enterprise_id=enterprise_id)
 
     @app.post("/demo/run/changchun")
-    def run_changchun() -> Dict[str, Any]:
-        return demo.run_changchun_demo()
+    def run_changchun(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        payload = payload or {}
+        return demo.run_changchun_demo(
+            project_id=payload.get("project_id", "CC-2026-001"),
+            excavation_depth=float(payload.get("excavation_depth", 3.5)),
+            construction_method=payload.get("construction_method", "MECHANICAL"),
+        )
 
     @app.post("/demo/recompile-coordinate-core")
     def recompile_coordinate_core() -> Dict[str, Any]:
