@@ -1,0 +1,259 @@
+ontology:
+  id: customer-support-demo
+  version: 0.1.0
+  display_name: Customer Support Dynamic Ontology
+
+sources:
+  accounts_csv:
+    kind: csv
+    path: data/accounts.csv
+    primary_key: account_id
+    refresh: manual
+    owner: sales_ops
+  tickets_csv:
+    kind: csv
+    path: data/tickets.csv
+    primary_key: ticket_id
+    refresh: manual
+    owner: support_ops
+  contracts_folder:
+    kind: document_folder
+    path: data/contracts
+    refresh: manual
+    chunking:
+      strategy: heading_and_window
+      max_tokens: 800
+    extraction:
+      entities:
+        - Contract
+        - SlaTerm
+
+object_types:
+  Customer:
+    display_name: Customer
+    primary_key: customer_id
+    source_mapping:
+      source: accounts_csv
+      key: account_id
+      confidence: 0.98
+      review_status: accepted
+    properties:
+      customer_id:
+        type: string
+        required: true
+        source_field: account_id
+      name:
+        type: string
+        source_field: account_name
+      tier:
+        type: enum
+        values: [VIP, Standard, Trial]
+        source_field: tier
+      arr:
+        type: number
+        source_field: annual_recurring_revenue
+
+  Ticket:
+    display_name: Support Ticket
+    primary_key: ticket_id
+    source_mapping:
+      source: tickets_csv
+      key: ticket_id
+      confidence: 0.97
+      review_status: accepted
+    properties:
+      ticket_id:
+        type: string
+        required: true
+        source_field: ticket_id
+      customer_id:
+        type: string
+        source_field: account_id
+      status:
+        type: enum
+        values: [open, pending, solved, closed]
+        source_field: status
+      priority:
+        type: enum
+        values: [P1, P2, P3]
+        source_field: priority
+      created_at:
+        type: datetime
+        source_field: created_at
+
+  Contract:
+    display_name: Contract
+    primary_key: contract_id
+    source_mapping:
+      source: contracts_folder
+      key: extracted_contract_id
+      confidence: 0.78
+      review_status: proposed
+    properties:
+      contract_id:
+        type: string
+        required: true
+      customer_id:
+        type: string
+      title:
+        type: string
+      effective_date:
+        type: date
+
+  SlaTerm:
+    display_name: SLA Term
+    primary_key: sla_term_id
+    source_mapping:
+      source: contracts_folder
+      key: generated_chunk_id
+      confidence: 0.72
+      review_status: proposed
+    properties:
+      sla_term_id:
+        type: string
+        required: true
+      contract_id:
+        type: string
+      metric:
+        type: string
+      threshold:
+        type: string
+      remedy:
+        type: string
+      evidence_chunk_id:
+        type: string
+
+link_types:
+  CustomerTickets:
+    from: Customer
+    to: Ticket
+    cardinality: one_to_many
+    mapping:
+      left_field: Customer.customer_id
+      right_field: Ticket.customer_id
+      confidence: 0.95
+      review_status: accepted
+
+  CustomerContracts:
+    from: Customer
+    to: Contract
+    cardinality: one_to_many
+    mapping:
+      left_field: Customer.customer_id
+      right_field: Contract.customer_id
+      confidence: 0.80
+      review_status: proposed
+
+  ContractSlaTerms:
+    from: Contract
+    to: SlaTerm
+    cardinality: one_to_many
+    mapping:
+      left_field: Contract.contract_id
+      right_field: SlaTerm.contract_id
+      confidence: 0.74
+      review_status: proposed
+
+semantic_indexes:
+  contract_sla_index:
+    source: contracts_folder
+    object_scope: Contract
+    chunk_to_object:
+      object_type: Contract
+      key_extractor: contract_id
+    metadata:
+      - customer_id
+      - document_id
+      - page
+      - section
+
+query_types:
+  customersAtRisk:
+    returns: Customer[]
+    parameters:
+      min_open_p1_tickets:
+        type: number
+        default: 1
+      include_contract_evidence:
+        type: boolean
+        default: true
+    plan:
+      - filter: Ticket.priority == "P1" and Ticket.status in ["open", "pending"]
+      - traverse: Ticket -> Customer
+      - semantic_evidence: contract_sla_index
+
+workflow_types:
+  customerRiskReview:
+    ontology_types: [Customer, Ticket, Contract, SlaTerm]
+    triggers: [manual, webhook]
+    steps:
+      - id: find_customer
+        uses: query.Customer.byName
+      - id: find_open_tickets
+        uses: query.Ticket.openByCustomer
+        inputs: [find_customer]
+      - id: find_contract_evidence
+        uses: semantic.contract_sla_index
+        inputs: [find_customer]
+        on_failure: continue
+      - id: draft_risk_assessment
+        uses: advisor.customerRisk
+        inputs: [find_customer, find_open_tickets, find_contract_evidence]
+      - id: escalate_ticket
+        uses: action.escalateTicket
+        inputs: [draft_risk_assessment]
+        requires_approval: true
+    failure_policy:
+      default: stop
+
+action_types:
+  escalateTicket:
+    display_name: Escalate ticket
+    input:
+      ticket_id:
+        type: string
+        required: true
+      reason:
+        type: string
+        required: true
+    output:
+      escalation_id:
+        type: string
+      status:
+        type: string
+    executor:
+      kind: mock
+      idempotency_key: ticket_id
+    safety:
+      dry_run_required: true
+      approval_required: true
+      audit_log: true
+    permissions:
+      roles: [support_manager, agent_runtime]
+
+permissions:
+  default_read_roles:
+    - analyst
+    - agent_runtime
+  default_action_roles:
+    - support_manager
+
+generation:
+  typescript:
+    package_name: "@demo/customer-support-osdk"
+    output: generated/ts
+  mcp:
+    server_name: customer-support-osdk
+    output: generated/mcp
+    expose:
+      - query_types
+      - safe_actions
+      - semantic_indexes
+      - workflow_types
+
+runtime:
+  audit:
+    mode: hash_chain_jsonl
+    include_input_hash: true
+    include_output_hash: true
+    include_provenance: true
