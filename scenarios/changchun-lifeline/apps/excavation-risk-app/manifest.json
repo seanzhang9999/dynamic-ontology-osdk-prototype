@@ -1,0 +1,10 @@
+{
+  "app_id": "excavation-risk-app",
+  "version": "1.0.0",
+  "digest": "sha256:excavation-risk-app-demo",
+  "requester_agent": "agent:construction-safety",
+  "allowed_products": [
+    "changchun-excavation-risk"
+  ]
+}
+

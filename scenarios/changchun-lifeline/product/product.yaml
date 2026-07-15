@@ -1,0 +1,16 @@
+id: changchun-excavation-risk
+version: 1.0.0
+purpose: construction_safety_assessment
+output_granularity: risk_summary
+allowed_outputs:
+  - RiskAssessment.overall_risk
+  - RiskAssessment.affected_asset_types
+  - RiskAssessment.affected_segment_count
+  - RiskAssessment.recommendations
+  - RiskAssessment.quality_summary
+forbidden_outputs:
+  - PipelineSegment.exact_coordinates
+  - PipelineSegment.owner_detail
+actions:
+  - assess_excavation_risk
+

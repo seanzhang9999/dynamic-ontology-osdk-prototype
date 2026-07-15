@@ -1,0 +1,19 @@
+id: enterprise-energy-credit
+version: 1.0.0
+purpose: enterprise_credit_assessment
+output_granularity: feature_summary
+allowed_outputs:
+  - CreditResult.credit_score
+  - CreditResult.risk_level
+  - CreditResult.coverage_months
+  - CreditResult.usage_stability_index
+  - CreditResult.late_payment_count_band
+  - CreditResult.quality_summary
+  - CreditResult.explanation
+forbidden_outputs:
+  - EnergyUsage.raw_monthly_kwh
+  - EnergyUsage.kwh
+  - BillingRecord.late_days
+actions:
+  - compute_credit_features
+

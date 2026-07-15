@@ -1,0 +1,17 @@
+ontology:
+  id: changchun-excavation-risk
+  version: 1.0.0
+  display_name: 长春城市生命线开挖风险动态本体
+source_mappings:
+  PipelineSegment.exact_coordinates: gis.pipeline_layer.geometry
+  PipelineSegment.asset_type: gis.pipeline_layer.asset_type
+  PipelineSegment.owner_detail: gis.pipeline_layer.owner
+  ExcavationProject.excavation_area: permit.project_area
+  RiskAssessment.overall_risk: local_spatial_rule.assess
+classification:
+  PipelineSegment.exact_coordinates: INTERNAL_ONLY
+  PipelineSegment.owner_detail: HIDDEN
+  PipelineSegment.asset_type: AGGREGATE_ONLY
+  ExcavationProject.excavation_area: COMPUTE_ONLY
+  RiskAssessment.overall_risk: EXTERNAL_RESULT
+

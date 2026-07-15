@@ -4,6 +4,7 @@ node_modules/
 .venv/
 __pycache__/
 .pytest_cache/
+ui/demo-console/dist/
 references/raw/
 references/external/
 /references/demo-source-doc-extract.md

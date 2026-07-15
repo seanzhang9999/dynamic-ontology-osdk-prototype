@@ -1,0 +1,66 @@
+services:
+  registry:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DEMO_SERVICE_ROLE: registry
+    ports:
+      - "8000:8000"
+
+  policy:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DEMO_SERVICE_ROLE: policy
+    ports:
+      - "8001:8000"
+
+  audit:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DEMO_SERVICE_ROLE: audit
+    ports:
+      - "8002:8000"
+
+  grid-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DEMO_SERVICE_ROLE: grid-runtime
+    ports:
+      - "8010:8000"
+
+  integrated-energy-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DEMO_SERVICE_ROLE: integrated-energy-runtime
+    ports:
+      - "8011:8000"
+
+  changchun-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DEMO_SERVICE_ROLE: changchun-runtime
+    ports:
+      - "8012:8000"
+
+  demo-console:
+    build:
+      context: ./ui/demo-console
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:80"
+    depends_on:
+      - registry
+

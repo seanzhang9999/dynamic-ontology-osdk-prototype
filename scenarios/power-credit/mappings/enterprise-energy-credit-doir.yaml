@@ -1,0 +1,25 @@
+ontology:
+  id: enterprise-energy-credit
+  version: 1.0.0
+  display_name: 企业用电征信动态本体
+source_mappings:
+  grid:
+    Enterprise.enterprise_id: customer.unified_credit_code
+    EnergyUsage.period: monthly_usage.usage_month
+    EnergyUsage.kwh: monthly_usage.total_kwh
+    BillingRecord.payment_status: payment.status
+    BillingRecord.late_days: paid_date - due_date
+  integrated-energy:
+    Enterprise.enterprise_id: enterprise.enterprise_no
+    EnergyUsage.period: billing.period_code
+    EnergyUsage.kwh: billing.energy_qty
+    BillingRecord.payment_status: charge.settle_status
+    BillingRecord.late_days: settle_date - deadline
+classification:
+  Enterprise.enterprise_id: COMPUTE_ONLY
+  EnergyUsage.kwh: COMPUTE_ONLY
+  EnergyUsage.raw_monthly_kwh: HIDDEN
+  BillingRecord.late_days: AGGREGATE_ONLY
+  CreditResult.credit_score: EXTERNAL_RESULT
+  CreditResult.risk_level: EXTERNAL_RESULT
+
