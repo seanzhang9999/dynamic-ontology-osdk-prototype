@@ -6,3 +6,5 @@ __pycache__/
 .pytest_cache/
 references/raw/
 references/external/
+/references/demo-source-doc-extract.md
+/动态本体OSDK可信数据产品流转Demo方案.docx
