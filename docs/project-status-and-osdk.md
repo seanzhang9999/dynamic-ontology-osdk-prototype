@@ -78,6 +78,14 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1 --port 5
 - API: http://127.0.0.1:8000/health
 - Demo Console: http://127.0.0.1:5173
 
+Demo Console 当前按产品流转链路展示：
+
+- 产品工厂：产品版本、用途、动作、原始导出策略。
+- 动态本体：对象、字段、类型、分类分级以及 OSDK 暴露含义。
+- OSDK 调用面：由本体和产品策略生成的 Python OSDK、MCP Tool、输出 schema、Runtime 内部依赖。
+- 执行拓扑：Agent、Catalog、Policy、OSDK、Runtime、Receipt 的调用关系。
+- 执行凭证：用业务语言解释授权、应用、本体/映射/产品版本、输入输出 hash、审计链和签名验证。
+
 主要演示接口：
 
 ```bash
@@ -398,4 +406,3 @@ tests/test_runtime_policy_audit.py
 ```
 
 这也是下一阶段最值得投入的工程方向。
-

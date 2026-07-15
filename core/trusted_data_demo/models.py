@@ -35,6 +35,7 @@ def utc_now() -> datetime:
 
 class ProductPackage(BaseModel):
     product_manifest: Dict[str, Any]
+    ontology_model: Dict[str, Any]
     product_schema: Dict[str, Any]
     runtime_binding: Dict[str, Any]
     quality_certificate: Dict[str, Any]
@@ -110,4 +111,3 @@ class ExecutionJob(BaseModel):
     receipt: Optional[ExecutionReceipt] = None
     policy_decision: PolicyDecision
     created_at: datetime = Field(default_factory=utc_now)
-

@@ -49,6 +49,7 @@ class TrustedDataDemo:
                 product_id: package["product_manifest"]
                 for product_id, package in self.products.items()
             },
+            "product_packages": self.products,
             "entitlements": {
                 key: entitlement.model_dump(mode="json")
                 for key, entitlement in self.policy.all().items()

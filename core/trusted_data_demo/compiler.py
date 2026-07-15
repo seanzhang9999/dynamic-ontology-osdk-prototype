@@ -66,6 +66,22 @@ def _readable_fields(doir: Dict[str, Any]) -> List[Dict[str, Any]]:
     return fields
 
 
+def _ontology_model(doir: Dict[str, Any], product: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "ontology": doir["ontology"],
+        "object_types": doir.get("object_types", {}),
+        "query_types": doir.get("query_types", {}),
+        "action_types": doir.get("action_types", {}),
+        "product_projection": {
+            "allowed_outputs": product["outputs"],
+            "forbidden_outputs": product["forbidden_outputs"],
+            "actions": product["actions"],
+            "purpose": product["purpose"],
+            "output_granularity": product["output_granularity"],
+        },
+    }
+
+
 def _python_osdk(product: Dict[str, Any]) -> str:
     class_name = "".join(part.title() for part in product["id"].split("-")) + "Client"
     actions = "\n".join(
@@ -189,6 +205,7 @@ def compile_product(
     }
     return ProductPackage(
         product_manifest=product_manifest,
+        ontology_model=_ontology_model(doir, product),
         product_schema=schema,
         runtime_binding=runtime_binding,
         quality_certificate=quality_certificate,

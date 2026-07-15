@@ -14,6 +14,8 @@ class CompilerTests(unittest.TestCase):
         manifest = package.product_manifest
         readable = {(item["object"], item["property"]) for item in manifest["readable_fields"]}
 
+        self.assertIn("object_types", package.ontology_model)
+        self.assertIn("EnergyUsage", package.ontology_model["object_types"])
         self.assertNotIn(("EnergyUsage", "raw_monthly_kwh"), readable)
         self.assertNotIn(("EnergyUsage", "kwh"), readable)
         self.assertIn("credit_score", package.product_schema["properties"])
@@ -42,4 +44,3 @@ class CompilerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
