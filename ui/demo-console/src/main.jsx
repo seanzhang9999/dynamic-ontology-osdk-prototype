@@ -51,6 +51,101 @@ const exposureText = {
   EXTERNAL_RESULT: "结果：可作为产品输出",
 };
 
+const objectText = {
+  Enterprise: "企业主体",
+  EnergyUsage: "月度用电记录",
+  BillingRecord: "缴费记录",
+  CreditResult: "征信评估结果",
+  PipelineSegment: "管线段",
+  ExcavationProject: "开挖项目",
+  RiskAssessment: "开挖风险评估",
+  MonitoringSignal: "监测摘要",
+  HazardEvent: "历史隐患",
+  ProductProjection: "数据产品投影",
+  Entitlement: "授权许可",
+  ExecutionReceipt: "执行凭证",
+};
+
+const fieldText = {
+  enterprise_id: "企业统一标识",
+  masked_name: "脱敏企业名",
+  period: "用电月份",
+  kwh: "月度用电量",
+  raw_monthly_kwh: "原始月度用电明细",
+  payment_status: "缴费状态",
+  late_days: "逾期天数",
+  credit_score: "征信评分",
+  risk_level: "风险等级",
+  coverage_months: "覆盖月份数",
+  usage_stability_index: "用电稳定性指数",
+  late_payment_count_band: "逾期次数区间",
+  quality_summary: "数据质量摘要",
+  explanation: "评分解释",
+  segment_id: "管线段编号",
+  exact_coordinates: "精确坐标",
+  asset_type: "资产类型",
+  owner_detail: "权属详情",
+  excavation_area: "开挖范围",
+  excavation_depth: "开挖深度",
+  construction_method: "施工方式",
+  overall_risk: "总体风险",
+  affected_asset_types: "受影响资产类型",
+  affected_segment_count: "受影响管线段数",
+  recommendations: "处置建议",
+};
+
+const relationText = {
+  "has monthly usage": "拥有月度用电记录",
+  "has billing records": "关联缴费记录",
+  "produces credit result": "生成征信评估结果",
+  "spatially intersects": "空间相交 / 缓冲区命中",
+  "contributes to risk": "参与风险评分",
+  "produces assessment": "生成风险评估结果",
+};
+
+const cardinalityText = {
+  one_to_one: "一对一",
+  one_to_many: "一对多",
+  many_to_one: "多对一",
+  many_to_many: "多对多",
+};
+
+const columnText = {
+  unified_credit_code: "统一社会信用代码",
+  usage_month: "用电月份",
+  total_kwh: "总用电量",
+  source_row_id: "源数据行号",
+  payment_status: "缴费状态",
+  late_days: "逾期天数",
+  enterprise_no: "企业编号",
+  period_code: "账期",
+  energy_qty: "能源用量",
+  settle_status: "结算状态",
+  segment_id: "管线段编号",
+  asset_type: "资产类型",
+  geometry: "几何坐标",
+  depth: "埋深",
+  material: "材质",
+  alerts_30d: "30天告警数",
+  quality: "质量分",
+  count: "次数",
+  severity: "严重程度",
+  product_id: "产品编号",
+  product_version: "产品版本",
+  ontology_version: "本体版本",
+  actions: "OSDK动作",
+  readable_fields: "可读字段数",
+  entitlement_id: "授权编号",
+  provider_id: "数据域",
+  purpose: "使用目的",
+  used_calls: "已用次数",
+  max_calls: "调用上限",
+  revoked: "是否撤销",
+  event_hash: "审计事件哈希",
+  request_id: "请求编号",
+  output_hash: "输出哈希",
+};
+
 async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -270,14 +365,14 @@ function OntologyPanel({ productPackage }) {
         {objects.map(([objectName, objectType]) => (
           <div className="object-card" key={objectName}>
             <div className="object-card-title">
-              <strong>{objectName}</strong>
+              <NameWithCode label={objectText[objectName] || objectName} code={objectName} />
               <span>{Object.keys(objectType.properties || {}).length} fields</span>
             </div>
             <div className="field-list">
               {Object.entries(objectType.properties || {}).map(([field, property]) => (
                 <div className="field-row" key={field}>
                   <div>
-                    <strong>{field}</strong>
+                    <NameWithCode label={fieldText[field] || field} code={field} />
                     <span>{property.type}</span>
                   </div>
                   <div>
@@ -296,6 +391,16 @@ function OntologyPanel({ productPackage }) {
   );
 }
 
+function NameWithCode({ label, code }) {
+  const showCode = label !== code;
+  return (
+    <span className="name-with-code">
+      <strong>{label}</strong>
+      {showCode && <code>{code}</code>}
+    </span>
+  );
+}
+
 function OntologyGraph({ links }) {
   if (!links.length) {
     return <div className="empty">当前产品包未声明本体关系。</div>;
@@ -309,10 +414,20 @@ function OntologyGraph({ links }) {
       <div className="relation-rows">
         {links.map(([name, link]) => (
           <div className="relation-row" key={name}>
-            <span className="graph-node">{link.from}</span>
-            <span className="graph-edge">{link.label || name}</span>
-            <span className="graph-node">{link.to}</span>
-            <small>{link.cardinality}</small>
+            <span className="graph-node">
+              <NameWithCode label={objectText[link.from] || link.from} code={link.from} />
+            </span>
+            <span className="graph-edge">
+              <strong>{relationText[link.label] || link.label || name}</strong>
+              <code>{link.label || name}</code>
+            </span>
+            <span className="graph-node">
+              <NameWithCode label={objectText[link.to] || link.to} code={link.to} />
+            </span>
+            <small>
+              <strong>{cardinalityText[link.cardinality] || link.cardinality}</strong>
+              <code>{link.cardinality}</code>
+            </small>
           </div>
         ))}
       </div>
@@ -338,7 +453,12 @@ function DataTables({ rows }) {
           {rows.map((row) => (
             <tr key={`${row.table}-${row.business_object}`}>
               <td>{row.table}</td>
-              <td>{row.business_object}</td>
+              <td>
+                <NameWithCode
+                  label={objectText[row.business_object] || row.business_object}
+                  code={row.business_object}
+                />
+              </td>
               <td>{row.fields}</td>
               <td>{row.sample_rows}</td>
               <td>{row.osdk_exposure}</td>
@@ -370,7 +490,9 @@ function PreviewTable({ rows }) {
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column}>{column}</th>
+              <th key={column}>
+                <NameWithCode label={columnText[column] || column} code={column} />
+              </th>
             ))}
           </tr>
         </thead>

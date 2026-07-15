@@ -337,7 +337,7 @@ h2 {
   border: 1px solid #93c5fd;
   border-radius: 8px;
   color: #1d4ed8;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 900;
   padding: 6px 8px;
   text-align: center;
@@ -345,16 +345,57 @@ h2 {
 
 .graph-edge {
   color: #0f766e;
+  display: grid;
   font-size: 12px;
   font-weight: 900;
+  gap: 2px;
   overflow-wrap: anywhere;
   text-align: center;
 }
 
+.graph-edge strong {
+  font-size: 14px;
+}
+
+.graph-edge code {
+  color: #64748b;
+  font-size: 11px;
+}
+
 .relation-row small {
   color: #64748b;
+  display: grid;
   font-size: 12px;
+  gap: 2px;
   text-align: right;
+}
+
+.relation-row small strong {
+  color: #475569;
+  font-size: 13px;
+}
+
+.relation-row small code {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.name-with-code {
+  display: grid;
+  gap: 2px;
+}
+
+.name-with-code strong {
+  color: inherit;
+  font-size: inherit;
+  line-height: 1.25;
+}
+
+.name-with-code code {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .object-list {
@@ -383,6 +424,11 @@ h2 {
   font-size: 12px;
 }
 
+.object-card-title .name-with-code {
+  color: #1e293b;
+  font-size: 14px;
+}
+
 .field-list {
   display: grid;
 }
@@ -404,6 +450,11 @@ h2 {
 .field-row span,
 .field-row small {
   display: block;
+}
+
+.field-row .name-with-code {
+  color: #1e293b;
+  font-size: 13px;
 }
 
 .field-row span,
