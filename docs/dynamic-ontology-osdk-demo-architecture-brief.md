@@ -1,167 +1,246 @@
-# 动态本体 OSDK 可信数据产品 Demo：演示说明与架构说明
+# 动态本体 OSDK 可信数据产品 Demo：从问题到演示的完整说明
 
 版本：2026-07-16  
 项目仓库：[seanzhang9999/dynamic-ontology-osdk-prototype](https://github.com/seanzhang9999/dynamic-ontology-osdk-prototype)  
 本地演示入口：`http://127.0.0.1:5173/`
 
-## 0. 核心判断
+## 1. 我们想解决什么目标
 
-这个 Demo 不应被理解为“做了一个 SDK”。更准确的表达是：
+这个 Demo 的目标不是证明“我们能生成一个 SDK”。如果只是生成 SDK，技术难度并不高，也不能形成真正的可信数据产品能力。
 
-> 用动态本体把异构数据能力编译成可被 Agent 安全调用的数据产品接口；OSDK 是这个接口的开发者体验，可信数据空间网关、Runtime、Policy 和 Receipt 才共同构成可信执行闭环。
-
-OSDK 客户端本身并不复杂。它主要是类型化方法、参数校验、动作封装和 Runtime/Gateway 调用，类似“对象映射 + API Client + Schema Validation + 代码生成”。真正的工程难度在于 OSDK 背后的机制：
-
-- 动态本体如何表达对象、字段、关系、动作、分类分级和质量规则。
-- Product Compiler 如何从全量本体裁剪出某个产品允许暴露的接口。
-- Runtime Binding 如何把本体动作稳定绑定到底层异构表、GIS、文件、API 或流式数据。
-- Policy/Entitlement 如何判断谁能为哪个用途调用哪个产品。
-- 可信数据空间网关如何做身份、签名、路由、审计和跨域边界控制。
-- Receipt 如何证明一次结果来自指定授权、应用、本体版本、产品版本和 Runtime。
-
-因此，Demo 的主线应该是：
+这个 Demo 真正想证明的是：
 
 ```text
-Agent 不直接查数据库，而是发现并调用 Product OSDK。
-OSDK 不暴露 SQL、连接串、原始文件或底层表字段，只暴露命名动作。
-可信数据空间网关和 Provider Runtime 在数据域内完成授权校验、本体映射、实际计算和凭证签名。
+把不同数据域里的结构化数据、非结构化数据、GIS 数据和业务规则，
+映射成动态本体中间层；
+再把动态本体按用途、授权、分类分级和质量规则编译成数据产品；
+最后把数据产品暴露成 Agent 可安全调用的 Product OSDK / MCP Tool。
 ```
 
-## 1. 演示页面如何组织
+换成业务语言，就是：
 
-当前 Demo Console 分为四个主要视图：
+```text
+客户或 Agent 像调用普通 SDK 一样调用数据产品；
+但它不能越权、不能查原始表、不能绕过授权、不能拿走敏感明细；
+实际计算在数据域 Runtime 内完成；
+每次结果都带可验证凭证。
+```
 
-| 视图 | 主要问题 | 证明点 |
-| --- | --- | --- |
-| 用电征信 | 银行如何查询企业用电征信数据产品 | 同一 OSDK 动作可分别进入国家电网和综合能源两个异构 Provider Runtime 执行，原始数据不出域 |
-| 长春开挖风险 | 施工方如何评估开挖风险 | 外部只提交工程参数，Runtime 内部使用管线坐标和规则计算风险，精确坐标不输出 |
-| 动态本体运维 | 本体到底是什么，OSDK 为什么只暴露一部分 | 全量动态本体经过用途、分类分级、质量门槛和产品投影编译，生成收缩后的 Product OSDK |
-| 部署视图 | OSDK 在哪里运行，如何经可信网络调用 Runtime | OSDK workload 可以在客户侧运行，也可以在我方独立沙箱运行，但都必须经可信数据空间网关访问 Runtime |
+### 1.1 目标读者需要先理解的几个概念
 
-页面的基本阅读顺序是：
+| 概念 | 简单解释 |
+| --- | --- |
+| 动态本体 | 对业务对象、字段、关系、动作和规则的统一表达，例如企业、用电记录、账单、管线、开挖工程和风险评估 |
+| 数据产品 | 不是一张表或一个文件，而是一个被授权、可执行、可验证的能力，例如“计算企业用电征信特征” |
+| Product OSDK | 由数据产品生成的 SDK，只暴露命名动作，不暴露 SQL、连接串、原始文件和底层字段 |
+| Runtime | 数据域内的执行环境，负责把本体动作映射到底层数据并完成本地计算 |
+| Entitlement | 授权许可，说明谁为了什么用途，在什么期限和范围内可以调用哪个产品 |
+| Receipt | 执行凭证，证明结果来自某个授权、某个应用、某个本体版本、某个产品版本和某个 Runtime |
+| 可信数据空间网关 | OSDK workload 和 Runtime 之间的可信边界，负责身份、签名、授权、路由和审计 |
 
-1. 先看顶部 Agent 价值闭环，理解每个环节解决什么问题。
-2. 再进入某个业务场景，选择企业或工程参数，触发查询/评估。
-3. 左侧看业务结果、本体结构和底层数据样例。
-4. 右侧看实时执行步骤，理解 OSDK、Gateway、Policy、Runtime 和 Receipt 如何协作。
-5. 最后进入动态本体运维和部署视图，说明接口为什么会变化、运行边界在哪里。
+### 1.2 Demo 最终要让人相信什么
 
-![Agent 价值闭环与用电征信工作台](assets/demo-screenshots/01-agent-value-and-power-workbench.png)
+| 要证明的事 | Demo 中如何体现 |
+| --- | --- |
+| 数据可以不出域 | 银行侧只得到征信摘要、评分、解释和凭证，不得到原始账单或缴费流水 |
+| 同一应用可以跨异构 Provider | 同一个企业用电征信 OSDK 动作分别进入国家电网 Runtime 和综合能源 Runtime |
+| 本体不是展示概念，而是编译源 | 动态本体运维中能看到全量本体、产品投影、编译裁剪和接口变化 |
+| Agent 有真实价值 | Agent 发现产品、申请授权、调用 OSDK、适配接口变化、验证 Receipt |
+| 安全边界不靠 SDK 自觉 | Policy、Gateway、Runtime、Sandbox 和 Receipt 共同约束调用 |
 
-## 2. Agent 价值闭环
+## 2. 现有方案通常有什么问题
 
-Agent 的价值不在于“能调用一个 API”，而在于它可以在受控边界内自动完成发现、授权、编排、适配和验证。
+如果没有动态本体、产品编译和可信执行闭环，常见做法会落到几类方案：数据中台、API 开放、数据交易、知识图谱查询、普通 SDK 或 Agent 直连数据库。它们各有价值，但很难同时满足“可用、可控、可审计、可演进、适合 Agent 编排”。
+
+### 2.1 数据中台的问题
+
+数据中台通常强调数据汇聚、统一建模和统一查询。它的优势是集中管理，问题是：
+
+- 容易把目标变成“让更多人查更多数据”。
+- 权限边界经常停留在库表、目录或接口级别，难表达“为了某个用途只能输出某种结果”。
+- 原始数据或明细数据容易被复制、导出或二次扩散。
+- Agent 如果接入数据中台，往往还是要理解表、字段、SQL 和权限细节。
+
+### 2.2 API 开放平台的问题
+
+API 可以把能力暴露出去，但传统 API 往往是手工定义的：
+
+- API 和数据治理规则容易分离。
+- 字段分类变化后，接口不一定自动收缩。
+- 不同 Provider 的 API 语义不统一，Agent 编排时需要做很多适配。
+- API 调用日志不等于结果可信凭证，后续很难证明“这个结果基于哪个授权和哪个数据产品版本产生”。
+
+### 2.3 数据交易的问题
+
+很多数据交易方案把交易对象理解为数据集、文件、接口调用次数或查询权限。问题是：
+
+- 交易完成后，很难持续控制数据如何被使用。
+- 交付对象如果是明细数据，天然存在出域和扩散风险。
+- 如果交付对象只是 API，又缺少本体、策略和凭证联动。
+- 数据产品的质量、版本、用途和执行证据难形成闭环。
+
+### 2.4 传统动态本体或知识图谱的问题
+
+动态本体和知识图谱擅长表达对象、关系和语义，但如果只停留在建模和查询，也会有问题：
+
+- 它解释了“数据是什么”，但未必解决“谁能用、为了什么用、怎么安全执行”。
+- 它可能提供图查询能力，但不一定能生成可被 Agent 安全调用的产品接口。
+- 它可能描述敏感字段，但不一定能把分类分级编译成接口收缩。
+
+### 2.5 普通 SDK 或 ORM 的问题
+
+普通 SDK/ORM 的开发体验很好，但它们通常靠近底层数据模型：
+
+- 容易把表、字段、查询能力暴露给调用方。
+- 很难表达“字段可参与计算但不可输出”。
+- SDK 本身不是安全边界，调用方拿到 SDK 后仍可能尝试绕过规则。
+
+### 2.6 Agent 直接访问数据的问题
+
+Agent 直接连库、读文件、写 SQL，看起来效率高，但风险最大：
+
+- Agent 可能误读字段、误拼 SQL 或误用数据。
+- 审计困难，不容易解释每一步结果如何产生。
+- 权限过大时容易泄漏原始数据。
+- 本体、授权、质量和凭证无法自然进入执行链路。
+
+### 2.7 对问题的总结
+
+```text
+传统方案常把“数据可访问”作为目标；
+我们要把目标改成“数据能力可被授权、可被执行、可被验证、可被 Agent 编排”。
+```
+
+## 3. 我们的解决思路
+
+我们的解决思路是把“数据访问”改造成“可信数据产品执行”。
+
+### 3.1 从源数据到动态本体
+
+不同 Provider 的底层数据可以完全不同。例如：
+
+| Provider | 可能的底层数据 |
+| --- | --- |
+| 国家电网 | 企业档案表、月度用电表、账单表、缴费流水 |
+| 综合能源 | 客户表、能耗发票表、逾期记录、合同信息 |
+| 城市生命线 | 管线 GIS 图层、监测摘要、历史隐患、保护规则、开挖工程参数 |
+
+这些数据先被映射到动态本体中间层：
+
+```text
+Enterprise
+EnergyUsage
+BillingRecord
+PaymentBehavior
+PipelineSegment
+ExcavationProject
+RiskAssessment
+```
+
+动态本体不是为了好看，而是为了让后续产品编译、OSDK 生成、Runtime 执行和 Agent 发现都基于同一套语义。
+
+### 3.2 从全量本体到产品投影
+
+全量本体通常很大，但一个数据产品只应该暴露其中一部分。
+
+例如“企业用电征信产品”只需要：
+
+- 企业标识。
+- 最近 12 个月用电稳定性。
+- 覆盖月数。
+- 逾期次数区间。
+- 缴费行为摘要。
+- 数据质量摘要。
+- 征信解释和执行凭证。
+
+它不应该暴露：
+
+- 原始逐月用电明细。
+- 原始缴费流水。
+- 连接串。
+- 底层表字段。
+- Provider 内部敏感字段。
+
+### 3.3 从产品投影到 Product OSDK
+
+Product Compiler 会根据产品投影、用途合同、分类分级、质量门槛和 Runtime 能力，生成：
+
+| 编译输出 | 作用 |
+| --- | --- |
+| `product_manifest.yaml` | 产品身份、用途、版本和动作声明 |
+| `product_schema.json` | 输入输出模型 |
+| `runtime_binding.yaml` | 本体动作如何绑定 Runtime 能力 |
+| `quality_certificate.json` | 数据质量口径 |
+| Python Product OSDK | 给应用和 Agent 调用 |
+| MCP Tool / OpenAPI | 给 Agent 和系统发现、编排 |
+
+### 3.4 分类分级如何影响接口
+
+分类分级不是文档标签，而会影响编译结果：
+
+| 分类 | 编译行为 |
+| --- | --- |
+| `HIDDEN` | 不生成接口，不进入结果模型 |
+| `INTERNAL_ONLY` | 默认仅 Runtime 内部可见 |
+| `COMPUTE_ONLY` | 不生成读取接口，但可作为受控动作内部依赖 |
+| `MASKED` | 只能生成脱敏后的结果字段 |
+| `AGGREGATE_ONLY` | 只生成聚合查询，不生成明细读取 |
+| `EXTERNAL_RESULT` | 可出现在产品结果模型中 |
+
+这正是 Demo 要表现的“动态”：当字段分类变化后，OSDK 调用面会重新编译并收缩。
+
+### 3.5 Agent 在这个机制中的价值
+
+Agent 的价值不在于绕过系统去直接拿数据，而是在可信边界内完成复杂编排：
 
 ```mermaid
 flowchart LR
-    Discover["发现<br/>读取产品目录、OSDK、MCP 描述"] --> Authorize["授权<br/>按用途、主体、Provider、期限申请 entitlement"]
-    Authorize --> Orchestrate["编排<br/>跨 Provider 调用同一产品动作"]
-    Orchestrate --> Adapt["适配<br/>本体分类变化后重新读取新 OSDK"]
-    Adapt --> Verify["验证<br/>校验 receipt、签名、hash 和版本"]
+    Discover["发现<br/>读取产品目录和 OSDK/MCP 描述"] --> Authorize["授权<br/>申请 entitlement"]
+    Authorize --> Orchestrate["编排<br/>调用命名产品动作"]
+    Orchestrate --> Adapt["适配<br/>本体变化后读取新 OSDK"]
+    Adapt --> Verify["验证<br/>校验 receipt 和 hash"]
     Verify --> Discover
 ```
 
 | 环节 | Agent 做什么 | 平台保证什么 |
 | --- | --- | --- |
-| 发现 | 读取产品目录、OSDK/MCP 描述，知道有哪些可信数据产品可调用 | 产品能力以机器可读形式发布，不要求 Agent 猜表结构 |
-| 授权 | 按用途、数据域、调用方和期限申请 entitlement | Policy Service 统一判断授权是否存在、过期、撤销、超配额 |
-| 编排 | 调用同一产品动作访问多个 Provider Runtime | OSDK 不接触连接串、SQL、原始文件或底层表字段 |
-| 适配 | 本体分类变化后重新读取新 OSDK，避开已收缩接口 | Product Compiler 重新生成接口，禁止字段不会泄漏 |
-| 验证 | 拿到结果后验证 receipt | Receipt 记录授权、应用、本体、产品、Runtime、输入输出 hash 和签名 |
+| 发现 | 读取产品目录、OSDK/MCP 描述，知道有哪些可信数据产品可调用 | 能力以机器可读形式发布，不要求 Agent 猜表结构 |
+| 授权 | 按用途、数据域、调用方和期限申请 entitlement | Policy Service 判断授权是否存在、过期、撤销、超配额 |
+| 编排 | 跨 Provider 调用同一产品动作 | OSDK 不接触 SQL、连接串、原始文件或底层表字段 |
+| 适配 | 本体分类变化后重新读取新 OSDK | Product Compiler 保证禁止字段不会进入接口 |
+| 验证 | 拿到结果后验证 Receipt | Receipt 记录授权、应用、本体、产品、Runtime、输入输出 hash 和签名 |
 
-这个闭环对应 Demo 页面上的四类信息：
+![Agent 价值和可信网络位置](assets/architecture-diagrams/agent-value-framework.png)
 
-| 页面区域 | 对应价值 |
-| --- | --- |
-| 顶部价值说明和产品目录 | 发现 |
-| 授权编号、用途、期限、调用方、Provider | 授权 |
-| OSDK 调用代码、实时执行步骤 | 编排 |
-| 动态本体运维中的编译裁剪结果 | 适配 |
-| 凭证中心、hash、签名、Receipt Verifier | 验证 |
+## 4. 总体架构
 
-## 3. 总体框架结构
+整个系统可以分为六层。
 
-![Agent 价值和框架结构图](assets/architecture-diagrams/agent-value-framework.png)
+![总体框架结构图](assets/architecture-diagrams/framework-structure.png)
 
 ```mermaid
 flowchart TB
-    subgraph Experience["体验层"]
-        Agent["Agent / 业务应用"]
-        Console["Demo Console"]
-    end
-
-    subgraph Interface["产品接口层"]
-        Catalog["Product Catalog"]
-        OSDK["Generated Product OSDK"]
-        MCP["MCP Tool / OpenAPI"]
-    end
-
-    subgraph Trust["可信执行与网络层"]
-        Gateway["可信数据空间网关"]
-        Policy["Policy / Entitlement"]
-        Sandbox["OSDK Workload Sandbox"]
-        Audit["Audit / Receipt"]
-    end
-
-    subgraph Runtime["数据域 Runtime 层"]
-        Binding["Runtime Binding"]
-        Action["Ontology Action"]
-        Compute["Local Controlled Compute"]
-    end
-
-    subgraph Ontology["动态本体与治理层"]
-        DOIR["DOIR Registry"]
-        Projection["Product Projection"]
-        Compiler["Product Compiler"]
-        Classify["分类分级 / 质量规则"]
-    end
-
-    subgraph Data["底层数据层"]
-        Tables["业务表 / 账单 / 缴费"]
-        GIS["GIS / 管线 / 监测"]
-        Files["文件 / API / 流数据"]
-    end
-
-    Agent --> Catalog
-    Agent --> OSDK
-    Console --> Catalog
-    OSDK --> Gateway
-    MCP --> Gateway
-    Gateway --> Policy
-    Gateway --> Sandbox
-    Gateway --> Binding
-    Binding --> Action
-    Action --> Compute
-    Compute --> Tables
-    Compute --> GIS
-    Compute --> Files
-    Compute --> Audit
-    Audit --> Gateway
-    DOIR --> Projection
-    Projection --> Compiler
-    Classify --> Compiler
-    Compiler --> Catalog
-    Compiler --> OSDK
-    Compiler --> MCP
-    Compiler --> Binding
+    Data["1. 数据域资产<br/>结构化表、文档、GIS、监测、历史隐患"] --> DOIR["2. DOIR / 动态本体 Registry<br/>对象、字段、关系、动作、质量规则"]
+    DOIR --> Compiler["3. Product Compiler<br/>产品投影、分类分级、用途合同、质量门槛"]
+    Compiler --> Interfaces["4. Generated Interfaces<br/>Product OSDK / MCP Tool / OpenAPI / Schema"]
+    Interfaces --> Gateway["5. Trusted Execution Plane<br/>网关、Policy、Entitlement、Sandbox、Runtime"]
+    Gateway --> Receipt["6. Verification / Audit<br/>Execution Receipt、hash chain、签名验证"]
 ```
 
-分层解释：
+### 4.1 各层职责
 
-| 层 | 作用 |
-| --- | --- |
-| 体验层 | 给业务人员、开发者和 Agent 展示产品、结果、执行过程和凭证 |
-| 产品接口层 | 把数据产品发布成 Product Catalog、OSDK、MCP Tool 和 OpenAPI |
-| 可信执行与网络层 | 负责身份、授权、签名、路由、沙箱隔离、审计和凭证 |
-| Runtime 层 | 在数据域内执行命名动作，完成本体映射和本地受控计算 |
-| 动态本体与治理层 | 维护对象、字段、关系、动作、分类分级、质量规则和产品投影 |
-| 底层数据层 | 真实数据所在位置，可以是表、GIS、文件、API 或流式数据 |
+| 层 | 职责 | 不做什么 |
+| --- | --- | --- |
+| 数据域资产 | 保存真实数据和原始业务系统 | 不直接对外暴露原始数据 |
+| DOIR / 动态本体 Registry | 统一表达对象、字段、关系、动作、质量和分类 | 不等同于对外接口 |
+| Product Compiler | 把全量本体裁剪成某个产品的安全投影 | 不允许绕过分类分级 |
+| Generated Interfaces | 生成 OSDK、MCP、OpenAPI 和 Schema | 不暴露自由 SQL、连接串、原始文件 |
+| Trusted Execution Plane | 完成身份、授权、路由、沙箱、Runtime 执行和审计 | 不把安全寄托在 SDK 客户端 |
+| Verification / Audit | 生成可验证凭证，支持复核和追责 | 不要求验证方看到原始数据 |
 
-## 4. OSDK 的实际情况
+### 4.2 OSDK 的真实位置
 
-### 4.1 OSDK 是什么
-
-Product OSDK 是由动态本体和产品投影生成的“受控调用面”。它把一个数据产品暴露成开发者和 Agent 容易理解的类型化方法，例如：
+OSDK 是调用体验，不是可信边界。它做的事情主要是：
 
 ```python
 class EnterpriseEnergyCreditClient:
@@ -186,7 +265,7 @@ class EnterpriseEnergyCreditClient:
         )
 ```
 
-Agent 或业务应用看到的是：
+业务应用或 Agent 看到的是：
 
 ```python
 client = EnterpriseEnergyCreditClient(runtime=gateway_runtime)
@@ -198,17 +277,27 @@ result = client.compute_credit_features(
 )
 ```
 
-### 4.2 entitlement_id 是什么
+### 4.3 entitlement_id 到底是什么
 
-`entitlement_id` 是一次授权许可的编号，不是业务字段，也不是企业 ID。它代表“谁、为了什么用途、在什么期限内、可以调用哪个产品、访问哪个 Provider、输出到什么粒度”。
+`entitlement_id` 是授权许可编号，不是企业 ID，也不是业务数据字段。
 
-在执行链路中，`entitlement_id` 会被用在三个位置：
+它描述的是：
 
-1. OSDK 把它作为 payload 的一部分传给 Gateway/Runtime。
-2. Policy Service 用它查授权记录并判断是否允许执行。
-3. Audit Service 把它写入 Execution Receipt，证明结果基于哪个授权产生。
+```text
+谁，在什么时间范围内，为了什么用途，
+可以对哪个 Provider 调用哪个数据产品，
+允许得到什么粒度的输出。
+```
 
-简化后的执行逻辑：
+它在执行链路里被用三次：
+
+| 位置 | 如何使用 |
+| --- | --- |
+| OSDK payload | OSDK 把 `entitlement_id` 随请求传给 Gateway/Runtime |
+| Policy Service | Policy 用它查授权记录，判断是否过期、撤销、用途不符、超配额 |
+| Receipt | Audit Service 把它写进执行凭证，证明结果基于哪个授权产生 |
+
+简化代码：
 
 ```python
 decision = policy.evaluate(
@@ -231,11 +320,9 @@ receipt = audit.sign_receipt(
 )
 ```
 
-所以它的意义类似“可审计的调用许可证编号”。没有它，OSDK 仍然可以构造方法调用，但 Runtime/Policy 应拒绝执行。
+### 4.4 depends_on 与 OSDK 参数为什么不一样
 
-### 4.3 depends_on 与 OSDK 传参为什么不一样
-
-页面中会展示这样的绑定关系：
+页面中会出现：
 
 ```yaml
 action: compute_credit_features
@@ -245,15 +332,13 @@ depends_on:
 returns: CreditResult
 ```
 
-这不是说 Agent 要把 `EnergyUsage.kwh` 或 `BillingRecord.late_days` 作为参数传进来。真正含义是：
+这不是说 Agent 要把 `EnergyUsage.kwh` 或 `BillingRecord.late_days` 传进来。
 
 | 项 | 面向谁 | 含义 |
 | --- | --- | --- |
 | `enterprise_id`, `months`, `entitlement_id` | Agent / OSDK 调用方 | 外部允许传入的业务参数和授权编号 |
-| `depends_on` | Runtime / Product Compiler | 为完成这个动作，Runtime 在数据域内部需要读取或计算哪些本体字段 |
+| `depends_on` | Runtime / Product Compiler | Runtime 内部完成这个动作需要读取或计算哪些本体字段 |
 | `runtime_binding` | Runtime | 把本体字段映射到底层 Provider 自己的数据表、GIS 图层、API 或文件 |
-
-对应关系如下：
 
 ```mermaid
 flowchart TD
@@ -273,126 +358,9 @@ flowchart TD
 OSDK 参数是外部调用合约；depends_on 是 Runtime 内部计算依赖。
 ```
 
-### 4.4 OSDK 不是安全边界
+### 4.5 客户侧 OSDK 与我方沙箱 OSDK
 
-OSDK 应该尽量简单，越像普通 SDK 越容易被开发者和 Agent 使用。但安全边界不在 OSDK 客户端里，而在：
-
-- Gateway：请求签名、身份、路由、跨域边界、审计。
-- Policy：授权、用途、期限、配额、撤销、输出粒度。
-- Runtime：本地执行、底层映射、禁止原始数据出域。
-- Sandbox：隔离客户 OSDK workload，限制网络和文件访问。
-- Receipt：对执行事实进行签名和防篡改验证。
-
-## 5. 用电征信场景
-
-用电征信不是“把两个地方的数据全部搜索后合并原始数据”。更准确的流程是：
-
-1. 同一银行 Agent 使用同一个 Product OSDK 动作。
-2. 该动作可分别路由到国家电网 Runtime 和综合能源 Runtime。
-3. 每个 Runtime 在自己的数据域内完成本体映射和特征计算。
-4. 结果以标准 `CreditResult` 结构返回，通常是摘要、评分、解释和质量快照。
-5. 如果需要跨 Provider 汇总，汇总的是产品结果或特征摘要，不是原始账单、缴费流水或连接串。
-
-```mermaid
-flowchart LR
-    Agent["银行 Agent"] --> OSDK["EnterpriseEnergyCreditClient"]
-    OSDK --> Gateway["可信数据空间网关"]
-    Gateway --> Grid["国家电网 Runtime"]
-    Gateway --> Energy["综合能源 Runtime"]
-    Grid --> GridData["国家电网异构表<br/>用电、账单、缴费"]
-    Energy --> EnergyData["综合能源异构表<br/>用能、发票、逾期"]
-    Grid --> Result1["CreditResult 摘要"]
-    Energy --> Result2["CreditResult 摘要"]
-    Result1 --> Merge["银行侧结果汇总"]
-    Result2 --> Merge
-```
-
-演示时应强调：
-
-- 银行侧看不到底层表名、连接串或原始流水。
-- 同一应用包可以在两个 Provider Runtime 中执行。
-- 两个 Provider 的底层表结构可以不同，但都映射到统一领域本体。
-- 授权撤销后，下一次执行应失败，并在实时运行情况中记录拒绝原因。
-
-![用电征信执行链路](assets/demo-screenshots/02-power-credit-execution-trace.png)
-
-## 6. 长春开挖风险场景
-
-长春场景用来说明“数据不出域，但计算可以使用敏感字段”。例如管线精确坐标可能被升级为核心数据：
-
-| 字段 | 分类 | 外部接口 | Runtime 内部 |
-| --- | --- | --- | --- |
-| `PipelineSegment.exact_coordinates` | `COMPUTE_ONLY` | 不生成读取接口 | 风险评估动作可使用 |
-| `PipelineSegment.owner_detail` | `HIDDEN` | 完全不暴露 | 默认不可用 |
-| `RiskAssessment.overall_risk` | `EXTERNAL_RESULT` | 可返回 | 可写入结果 |
-
-用户或 Agent 传入的是：
-
-```python
-result = client.assess_excavation_risk(
-    project_id="cc-demo-2026-001",
-    excavation_area=geojson_polygon,
-    depth_m=4.5,
-    construction_method="mechanical",
-    entitlement_id="ent_changchun_demo",
-)
-```
-
-Runtime 内部会使用 GIS intersection、buffer、距离和规则评分，返回风险等级、影响资产类型、影响段数、建议、质量摘要和凭证。
-
-```mermaid
-flowchart TD
-    Project["ExcavationProject<br/>开挖工程"] --> Intersect["spatially_intersects<br/>空间相交"]
-    Segment["PipelineSegment<br/>管线段"] --> Intersect
-    Intersect --> Risk["RiskAssessment<br/>风险评估"]
-    Segment --> Rule["保护规则 / 监测摘要"]
-    Rule --> Risk
-    Risk --> Output["风险等级、影响资产类型、建议、凭证"]
-```
-
-## 7. 动态本体运维与编译裁剪
-
-动态本体运维视图要讲清楚一个关键点：
-
-```text
-全量动态本体 != Product OSDK。
-Product OSDK 是全量本体经过产品投影、用途合同、分类分级、质量门槛和 Runtime 能力裁剪后的结果。
-```
-
-![动态本体运维视图](assets/demo-screenshots/03-dynamic-ontology-ops.png)
-
-典型编译规则：
-
-| 分类 | 编译行为 |
-| --- | --- |
-| `HIDDEN` | 不生成接口，不进入结果模型 |
-| `INTERNAL_ONLY` | 默认仅 Runtime 内部可见 |
-| `COMPUTE_ONLY` | 不生成读取接口，但可作为受控动作内部依赖 |
-| `MASKED` | 只能生成脱敏后的结果字段 |
-| `AGGREGATE_ONLY` | 只生成聚合查询，不生成明细读取 |
-| `EXTERNAL_RESULT` | 可出现在产品结果模型中 |
-
-产品编译链路：
-
-```mermaid
-flowchart LR
-    DOIR["全量 DOIR / 动态本体"] --> Projection["Product Projection<br/>选择对象、字段、关系、动作"]
-    Projection --> Contract["用途合同<br/>purpose, requester, provider, output"]
-    Contract --> Policy["分类分级 / 质量门槛"]
-    Policy --> Compiler["Product Compiler"]
-    Compiler --> Manifest["product_manifest.yaml"]
-    Compiler --> Schema["product_schema.json"]
-    Compiler --> Binding["runtime_binding.yaml"]
-    Compiler --> SDK["Generated OSDK / MCP / OpenAPI"]
-```
-
-这个机制与传统“建一个大而全的数据中台再给应用查表”不同。动态本体不是直接给外部暴露数据，而是让数据产品以动作方式被编译、授权、执行和验证。
-
-## 8. 部署视图：客户侧 OSDK 与我方沙箱 OSDK
-
-更通用的部署方式是把客户的 OSDK 调用视为一个独立 workload。这个 workload 可以运行在客户侧，也可以运行在我方托管沙箱，但都必须经过可信数据空间网关才能调用 Runtime。
-
-![部署视图与网关调用代码](assets/demo-screenshots/04-deployment-topology-and-code.png)
+更通用的部署方式是把客户的 OSDK 调用视为一个独立 workload。这个 workload 可以在客户侧运行，也可以在我方独立沙箱运行，但都必须经过可信数据空间网关才能调用 Runtime。
 
 ```mermaid
 flowchart LR
@@ -411,13 +379,223 @@ flowchart LR
     Sandbox --> Gateway
 
     Gateway --> Policy["Policy / Entitlement"]
-    Gateway --> Runtime["我方 Product Runtime"]
-    Runtime --> Data["我方数据域 / 受控数据源"]
+    Gateway --> Runtime["Provider / Product Runtime"]
+    Runtime --> Data["数据域 / 受控数据源"]
     Runtime --> Receipt["签名 Execution Receipt"]
-    Gateway --> Federation["未来联合计算编排"]
 ```
 
-代码形态：
+共同约束是：
+
+- OSDK workload 不直连数据库。
+- OSDK workload 不直连 Runtime 内网。
+- 所有调用经可信数据空间网关。
+- 所有调用带签名、授权、合约、路由和审计 envelope。
+
+## 5. 场景设计
+
+当前 Demo 使用两个业务场景和一个运维视图来证明机制。
+
+### 5.1 场景一：企业用电征信可信数据产品
+
+业务问题：
+
+```text
+银行希望评估企业经营稳定性，但不应拿走企业逐月用电明细、账单和缴费流水。
+```
+
+解决方式：
+
+- 银行 Agent 调用 `EnterpriseEnergyCreditClient.compute_credit_features(...)`。
+- 同一产品动作可以进入国家电网 Runtime，也可以进入综合能源 Runtime。
+- 两个 Provider 的底层表结构不同，但都映射到统一的 `EnterpriseEnergyCredit` 领域本体。
+- Runtime 在数据域内完成特征计算，只返回摘要、评分、解释、质量快照和凭证。
+
+```mermaid
+flowchart LR
+    Agent["银行 Agent"] --> OSDK["EnterpriseEnergyCreditClient"]
+    OSDK --> Gateway["可信数据空间网关"]
+    Gateway --> Grid["国家电网 Runtime"]
+    Gateway --> Energy["综合能源 Runtime"]
+    Grid --> GridData["国家电网异构表<br/>用电、账单、缴费"]
+    Energy --> EnergyData["综合能源异构表<br/>用能、发票、逾期"]
+    Grid --> Result1["CreditResult 摘要"]
+    Energy --> Result2["CreditResult 摘要"]
+    Result1 --> Merge["银行侧结果汇总"]
+    Result2 --> Merge
+```
+
+需要特别说明：
+
+```text
+用电征信不是把两个地方的原始数据搜索出来再合并。
+如果跨 Provider 汇总，汇总的是产品结果或特征摘要，不是原始账单、缴费流水或连接串。
+```
+
+### 5.2 场景二：长春城市生命线开挖风险产品
+
+业务问题：
+
+```text
+施工方需要评估开挖风险，但管线精确坐标、权属详情和监测细节不能随意输出。
+```
+
+解决方式：
+
+- 外部应用只提交工程 ID、开挖范围、深度、施工方式和授权编号。
+- Runtime 在数据域内使用管线 GIS、保护规则、监测摘要和历史隐患。
+- 返回风险等级、影响资产类型、影响段数、建议、质量摘要和凭证。
+- 如果 `PipelineSegment.exact_coordinates` 升级为 `COMPUTE_ONLY`，OSDK 不生成坐标读取接口，但风险评估动作仍可在 Runtime 内部使用坐标计算。
+
+```mermaid
+flowchart TD
+    Project["ExcavationProject<br/>开挖工程"] --> Intersect["spatially_intersects<br/>空间相交"]
+    Segment["PipelineSegment<br/>管线段"] --> Intersect
+    Intersect --> Risk["RiskAssessment<br/>风险评估"]
+    Segment --> Rule["保护规则 / 监测摘要"]
+    Rule --> Risk
+    Risk --> Output["风险等级、影响资产类型、建议、凭证"]
+```
+
+### 5.3 场景三：动态本体运维
+
+业务问题：
+
+```text
+如果本体只是图形展示，无法证明它真的约束接口和执行。
+```
+
+解决方式：
+
+- 展示全量动态本体。
+- 展示产品投影。
+- 展示分类分级如何改变编译结果。
+- 展示重新编译后 OSDK 接口收缩。
+- 展示 Agent 如何读取新 OSDK 并避开已收缩接口。
+
+## 6. 基于架构的 Demo 演示路径
+
+这一节把页面操作和底层架构对应起来，便于讲解时不只是“点按钮”，而是说明每一步解决什么问题。
+
+### 6.1 Demo 开场：先讲目标和问题
+
+建议开场用 1 分钟说明：
+
+```text
+我们不是演示一个普通 SDK，而是演示数据产品如何在不暴露原始数据的前提下，被 Agent 发现、授权、调用、适配和验证。
+```
+
+然后对应页面顶部的 Agent 价值闭环：
+
+| 页面内容 | 说明 |
+| --- | --- |
+| 发现 | Agent 读取产品目录和 OSDK/MCP 描述 |
+| 授权 | Agent 申请 entitlement，不绕过 Policy |
+| 编排 | Agent 调用命名动作，不接触 SQL |
+| 适配 | 本体变化后读取新 OSDK |
+| 验证 | 验证 Receipt、hash 和签名 |
+
+![Agent 价值闭环与用电征信工作台](assets/demo-screenshots/01-agent-value-and-power-workbench.png)
+
+### 6.2 用电征信 Demo：从企业查询到可信结果
+
+页面操作：
+
+1. 进入“用电征信”。
+2. 选择企业，例如 `91300000DEMO0007`。
+3. 点击“查询征信”。
+4. 观察左侧结果、动态本体、底层数据样例。
+5. 观察右侧实时执行情况。
+
+架构解释：
+
+| 页面动作 | 架构层 | 发生了什么 |
+| --- | --- | --- |
+| 选择企业 | 体验层 | 用户只提供业务对象，不写 SQL |
+| 查询征信 | OSDK 层 | 调用 `compute_credit_features` 命名动作 |
+| 生成/携带授权编号 | Policy 层 | `entitlement_id` 用于校验用途、期限、Provider、调用方 |
+| 进入 Provider Runtime | Runtime 层 | 在数据域内读取映射后的本体字段 |
+| 返回征信摘要 | 产品结果层 | 外部只得到 `CreditResult` |
+| 生成凭证 | Audit 层 | Receipt 写入授权、版本、输入输出 hash 和签名 |
+
+OSDK 调用代码：
+
+```python
+result = client.compute_credit_features(
+    enterprise_id="91300000DEMO0007",
+    months=12,
+    entitlement_id="ent_cddf8c7d872e",
+)
+```
+
+讲解重点：
+
+- `enterprise_id` 和 `months` 是业务参数。
+- `entitlement_id` 是授权许可编号。
+- `EnergyUsage.kwh`、`BillingRecord.late_days` 是 Runtime 内部依赖，不是外部参数。
+- 银行侧不接触原始用电明细或缴费流水。
+
+![用电征信执行链路](assets/demo-screenshots/02-power-credit-execution-trace.png)
+
+### 6.3 长春开挖风险 Demo：敏感坐标只参与计算不输出
+
+页面操作：
+
+1. 进入“长春开挖风险”。
+2. 输入工程 ID、开挖范围、深度、施工方式。
+3. 点击“评估风险”。
+4. 查看风险等级、影响资产类型、影响段数、建议和凭证。
+
+架构解释：
+
+| 页面动作 | 架构层 | 发生了什么 |
+| --- | --- | --- |
+| 输入工程参数 | OSDK 层 | 外部只提交开挖工程参数 |
+| 评估风险 | Runtime 层 | Runtime 内部做 GIS intersection、buffer、距离和规则评分 |
+| 坐标分类升级 | Product Compiler | 坐标读取接口消失，但动作内部依赖保留 |
+| 输出结果 | 产品结果层 | 返回风险等级和建议，不返回精确坐标 |
+
+调用代码：
+
+```python
+result = client.assess_excavation_risk(
+    project_id="cc-demo-2026-001",
+    excavation_area=geojson_polygon,
+    depth_m=4.5,
+    construction_method="mechanical",
+    entitlement_id="ent_changchun_demo",
+)
+```
+
+### 6.4 动态本体运维 Demo：证明本体真的会影响接口
+
+页面操作：
+
+1. 进入“动态本体运维”。
+2. 查看全量本体。
+3. 查看产品投影。
+4. 把管线精确坐标升级为核心数据或 `COMPUTE_ONLY`。
+5. 点击重新编译 OSDK。
+6. 观察读取接口消失，但风险评估动作保留。
+
+讲解重点：
+
+```text
+全量动态本体很大，但 Product OSDK 只暴露产品允许暴露的一小部分。
+产品接口不是人工写死的，而是由本体、投影、分类分级和策略共同编译出来的。
+```
+
+![动态本体运维视图](assets/demo-screenshots/03-dynamic-ontology-ops.png)
+
+### 6.5 部署视图 Demo：说明 OSDK workload 和可信网关
+
+页面操作：
+
+1. 进入“部署视图”。
+2. 切换“客户侧 OSDK Workload”和“我方独立 OSDK 沙箱”。
+3. 查看 `GatewayRuntimeAdapter` 代码。
+4. 点击“模拟网关调用”。
+
+架构解释：
 
 ```python
 gateway_runtime = GatewayRuntimeAdapter(
@@ -436,15 +614,34 @@ result = client.compute_credit_features(
 )
 ```
 
-这里 `runtime` 被替换为 `GatewayRuntimeAdapter`，所以 OSDK 调用面不变，但请求会被封装、签名并送到可信数据空间网关。网关再完成身份校验、授权校验、路由、审计和 Runtime 调用。
+这里的关键点是：
+
+- OSDK 调用面不变。
+- `runtime` 被替换成 `GatewayRuntimeAdapter`。
+- 调用先进入可信数据空间网关。
+- 网关再完成身份、签名、授权、路由和审计。
+- Runtime 仍在受控数据域内实际计算。
+
+![部署拓扑和代码](assets/demo-screenshots/04-deployment-topology-and-code.png)
 
 ![可信数据空间网关执行过程](assets/demo-screenshots/05-gateway-execution-trace.png)
 
-## 9. Execution Receipt 是什么
+## 7. Execution Receipt 如何解释
 
-Execution Receipt 是一次受控数据产品执行后的“可验证执行凭证”。它不是简单日志，而是面向结果可信性的结构化证据。
+Receipt 是执行凭证，不是普通日志。它要回答：
 
-Receipt 至少应该包含：
+```text
+这个结果是谁请求的？
+为了什么用途？
+基于哪个授权？
+哪个应用包发起？
+使用哪个本体、映射、产品和 Runtime 版本？
+输入输出是否被篡改？
+策略是否允许？
+谁签名背书？
+```
+
+示例结构：
 
 ```json
 {
@@ -467,120 +664,55 @@ Receipt 至少应该包含：
 }
 ```
 
-它回答的问题是：
+验证方不需要看到原始数据，只需要验证：
 
-| 问题 | Receipt 中的证据 |
-| --- | --- |
-| 谁调用的 | `requester_agent` |
-| 为了什么用途 | `purpose` |
-| 基于哪个授权 | `entitlement_id` |
-| 哪个应用包发起 | `application_digest` |
-| 使用哪个本体/映射/产品版本 | `ontology_version`, `mapping_version`, `product_version` |
-| 哪个 Runtime 执行 | `provider_agent`, `runtime_version` |
-| 输入输出是否被篡改 | `input_hash`, `output_hash` |
-| 策略是否允许 | `policy_decision` |
-| 凭证链是否连续 | `previous_event_hash` |
-| 谁签名背书 | `provider_signature` |
+- 签名是否正确。
+- 输入输出 hash 是否匹配。
+- hash 链是否连续。
+- 授权、产品、本体和 Runtime 版本是否符合声明。
 
-验证时并不需要看到原始数据。验证方可以重新计算输入输出摘要，校验签名和 hash 链，从而判断“这份结果是否来自指定授权和指定产品执行”。
+## 8. 实施门槛评估
 
-## 10. 与传统方案的差异
+OSDK 本身确实不是最难的部分。真正难的是让 OSDK 调用可信、可控、可演进、可运营。
 
-| 传统方案 | 常见问题 | 本机制的改进 |
+### 8.1 难度较低的部分
+
+| 模块 | 难度 | 原因 |
 | --- | --- | --- |
-| 数据中台 / 数据湖 | 往往强调汇聚和统一存储，容易形成原始数据出域或大权限查询 | Runtime 在数据域内执行，外部只拿产品结果和凭证 |
-| API 开放平台 | API 多为手工定义，接口与底层数据治理割裂 | OSDK/MCP/OpenAPI 由动态本体和产品投影编译生成 |
-| 传统动态本体 / 知识图谱 | 偏建模和查询，未必解决授权、执行和结果可信 | 本体动作绑定 Runtime、Policy 和 Receipt，直接进入可调用产品 |
-| 数据交易 | 交易对象常被理解为数据集或文件 | 交易对象变成可授权、可执行、可验证的数据产品动作 |
-| 普通 SDK / ORM | 开发体验好，但容易让调用方靠近底层数据模型 | Product OSDK 只暴露命名动作，不暴露自由 SQL 和底层字段 |
-| Agent 直接连库 | 快但不可控，难审计，难合规 | Agent 只能通过 OSDK/MCP 调用受控产品，并拿到可验证凭证 |
-
-核心差异是：
-
-```text
-传统方案常把“数据可访问”作为目标；
-本机制把“数据能力可被授权、可被执行、可被验证”作为目标。
-```
-
-## 11. 实施门槛评估
-
-### 11.1 难度较低的部分
-
-| 模块 | 难度 | 说明 |
-| --- | --- | --- |
-| Python OSDK 生成 | 低 | 本质是根据产品 schema 生成 Client、参数模型和返回模型 |
-| TypeScript OSDK 生成 | 低到中 | 需要处理前端类型、包发布和版本兼容 |
+| Python OSDK 生成 | 低 | 根据产品 schema 生成 Client、参数模型和返回模型 |
+| TypeScript OSDK 生成 | 低到中 | 主要处理包发布、前端类型和版本兼容 |
 | MCP Tool / OpenAPI 生成 | 低到中 | 从产品动作和 schema 生成机器可读工具描述 |
 | 参数校验 | 低到中 | 可依赖 Pydantic、JSON Schema、OpenAPI |
-| Demo Console 展示 | 中 | 难点主要是叙事清晰和执行链路可视化 |
 
-### 11.2 真正困难的部分
+### 8.2 真正困难的部分
 
 | 模块 | 难度 | 原因 |
 | --- | --- | --- |
 | 动态本体建模与治理 | 中到高 | 要表达对象、字段、关系、动作、分类分级、质量规则和版本演进 |
 | Product Compiler | 中到高 | 要保证禁止字段不会进入接口、结果模型或间接泄漏路径 |
-| Runtime Binding | 高 | 要把本体动作稳定映射到异构表、GIS、API、文件和流数据，并可测试、可回滚 |
-| Policy / Entitlement | 高 | 要覆盖用途、主体、Provider、期限、配额、撤销、输出粒度和审计 |
+| Runtime Binding | 高 | 要把本体动作稳定映射到异构表、GIS、API、文件和流数据 |
+| Policy / Entitlement | 高 | 要覆盖用途、主体、Provider、期限、配额、撤销和输出粒度 |
 | 可信数据空间网关 | 高 | 要做身份、签名、路由、合约、审计、限流、租户隔离和跨域安全 |
 | OSDK workload 隔离 | 高 | 客户侧或我方沙箱都需要网络策略、镜像证明、密钥管理和运行审计 |
 | Execution Receipt | 中到高 | 要让 hash、签名、版本、授权、策略决策可验证且防篡改 |
-| 版本兼容与接口演进 | 中到高 | 本体变化后 OSDK、Runtime、应用和 Agent 工具要协同升级 |
-| 联合计算扩展 | 很高 | 多 Runtime 编排、联邦聚合、隐私计算、TEE/MPC 会引入协议和运维复杂度 |
+| 联合计算扩展 | 很高 | 多 Runtime 编排、联邦聚合、隐私计算、TEE/MPC 会引入复杂协议和运维要求 |
 
-### 11.3 一句话结论
+一句话：
 
 ```text
 OSDK 是易用入口，不是可信边界。
-可信边界在 Runtime、Policy、Gateway、Sandbox 和 Receipt 这一整套系统中。
+可信边界在 Runtime、Policy、Gateway、Sandbox 和 Receipt 这一整套系统里。
 ```
 
-## 12. 后续研发建议
+## 9. 对外表达建议
 
-### 阶段 1：增强 Demo / PoC
-
-目标是讲清楚价值并证明机制可行。
-
-- 把 DOIR 从 Python fixture 切换到 YAML/JSON Registry。
-- 生成真实可安装的 Python package。
-- 生成 MCP Tool manifest，并让 Agent 通过真实工具描述调用。
-- 增加网关模拟服务，而不是只在前端内置模拟。
-- 增加授权撤销后的失败路径演示。
-- 增加 Receipt Verifier 的独立命令行工具。
-
-### 阶段 2：试点版
-
-目标是接入一个真实或准真实数据域。
-
-- SQLite/PostgreSQL Registry。
-- 持久化 Policy Store。
-- Runtime Adapter 支持 SQL、API、文件和 GIS 图层。
-- Gateway 支持请求签名、租户隔离和审计日志。
-- OSDK package 版本发布。
-- 前端展示真实编译前后差异和策略拒绝记录。
-
-### 阶段 3：生产化
-
-目标是可运营、可审计、可扩展。
-
-- 多租户 IAM。
-- KMS / 密钥轮换。
-- OSDK workload sandbox。
-- 网关高可用和限流。
-- Runtime 执行队列、重试、幂等。
-- 端到端审计和合规报表。
-- 数据质量 SLA。
-- 联合计算、隐私计算或 TEE/MPC 方案评估。
-
-## 13. 对外表达建议
-
-建议避免这样讲：
+不要把卖点说成：
 
 ```text
-我们生成了一个 OSDK。
+我们生成了一个 SDK。
 ```
 
-建议这样讲：
+建议表达为：
 
 ```text
 我们把动态本体治理后的数据能力编译成可被 Agent 调用的数据产品接口。
@@ -589,7 +721,7 @@ OSDK 是易用入口，不是可信边界。
 实际计算在受控 Runtime 内完成，每次结果都有可验证凭证。
 ```
 
-更短的客户版表达：
+更短的客户版：
 
 ```text
 像调 SDK 一样调数据产品；
@@ -619,11 +751,7 @@ OSDK 是易用入口，不是可信边界。
 
 ![网关执行链路](assets/demo-screenshots/05-gateway-execution-trace.png)
 
-## 附录 B：框架结构图
-
-![总体框架结构图](assets/architecture-diagrams/framework-structure.png)
-
-## 附录 C：术语表
+## 附录 B：术语表
 
 | 术语 | 说明 |
 | --- | --- |

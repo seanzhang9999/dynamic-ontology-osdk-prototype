@@ -150,6 +150,77 @@ def add_paragraph(doc: Document, text: str, style: str | None = None, bold: bool
         run.bold = bold
 
 
+def _next_numbering_id(numbering, tag_name: str, attr_name: str) -> int:
+    ids: list[int] = []
+    for node in numbering.findall(qn(tag_name)):
+        value = node.get(qn(attr_name))
+        if value and value.isdigit():
+            ids.append(int(value))
+    return (max(ids) + 1) if ids else 1
+
+
+def new_decimal_numbering(doc: Document) -> int:
+    numbering = doc.part.numbering_part.element
+    abstract_id = _next_numbering_id(numbering, "w:abstractNum", "w:abstractNumId")
+    num_id = _next_numbering_id(numbering, "w:num", "w:numId")
+
+    abstract = OxmlElement("w:abstractNum")
+    abstract.set(qn("w:abstractNumId"), str(abstract_id))
+    multi = OxmlElement("w:multiLevelType")
+    multi.set(qn("w:val"), "singleLevel")
+    abstract.append(multi)
+
+    lvl = OxmlElement("w:lvl")
+    lvl.set(qn("w:ilvl"), "0")
+    start = OxmlElement("w:start")
+    start.set(qn("w:val"), "1")
+    num_fmt = OxmlElement("w:numFmt")
+    num_fmt.set(qn("w:val"), "decimal")
+    lvl_text = OxmlElement("w:lvlText")
+    lvl_text.set(qn("w:val"), "%1.")
+    lvl_jc = OxmlElement("w:lvlJc")
+    lvl_jc.set(qn("w:val"), "left")
+    lvl.append(start)
+    lvl.append(num_fmt)
+    lvl.append(lvl_text)
+    lvl.append(lvl_jc)
+
+    p_pr = OxmlElement("w:pPr")
+    ind = OxmlElement("w:ind")
+    ind.set(qn("w:left"), "520")
+    ind.set(qn("w:hanging"), "260")
+    p_pr.append(ind)
+    lvl.append(p_pr)
+    abstract.append(lvl)
+    numbering.append(abstract)
+
+    num = OxmlElement("w:num")
+    num.set(qn("w:numId"), str(num_id))
+    abstract_ref = OxmlElement("w:abstractNumId")
+    abstract_ref.set(qn("w:val"), str(abstract_id))
+    num.append(abstract_ref)
+    numbering.append(num)
+    return num_id
+
+
+def add_numbered_paragraph(doc: Document, text: str, num_id: int) -> None:
+    para = doc.add_paragraph()
+    p_pr = para._p.get_or_add_pPr()
+    num_pr = p_pr.find(qn("w:numPr"))
+    if num_pr is None:
+        num_pr = OxmlElement("w:numPr")
+        p_pr.append(num_pr)
+    ilvl = OxmlElement("w:ilvl")
+    ilvl.set(qn("w:val"), "0")
+    num_id_node = OxmlElement("w:numId")
+    num_id_node.set(qn("w:val"), str(num_id))
+    num_pr.append(ilvl)
+    num_pr.append(num_id_node)
+    para.paragraph_format.space_after = Pt(3)
+    run = para.add_run(clean_inline(text))
+    set_run_font(run)
+
+
 def add_title(doc: Document, title: str) -> None:
     para = doc.add_paragraph()
     para.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -339,6 +410,7 @@ def render_markdown(md_path: Path, out_path: Path) -> None:
         if is_unordered_list(line) or is_ordered_list(line):
             ordered = is_ordered_list(line)
             style = "List Number" if ordered else "List Bullet"
+            num_id = new_decimal_numbering(doc) if ordered else None
             while i < len(lines):
                 current = lines[i]
                 if ordered and not is_ordered_list(current):
@@ -346,7 +418,10 @@ def render_markdown(md_path: Path, out_path: Path) -> None:
                 if not ordered and not is_unordered_list(current):
                     break
                 text = re.sub(r"^\s*(?:-|\d+\.)\s+", "", current)
-                add_paragraph(doc, text, style=style)
+                if ordered:
+                    add_numbered_paragraph(doc, text, num_id or new_decimal_numbering(doc))
+                else:
+                    add_paragraph(doc, text, style=style)
                 i += 1
             continue
 
