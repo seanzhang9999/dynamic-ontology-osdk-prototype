@@ -20,6 +20,10 @@ class CompilerTests(unittest.TestCase):
         self.assertNotIn(("EnergyUsage", "raw_monthly_kwh"), readable)
         self.assertNotIn(("EnergyUsage", "kwh"), readable)
         self.assertIn("credit_score", package.product_schema["properties"])
+        self.assertIn("enterprise_id: str", package.python_osdk)
+        self.assertIn("entitlement_id: str", package.python_osdk)
+        self.assertIn('action_id="compute_credit_features"', package.python_osdk)
+        self.assertNotIn("def compute_credit_features(self, **payload)", package.python_osdk)
         self.assertEqual(manifest["raw_export"], False)
 
     def test_forbidden_compute_field_cannot_be_added_to_output(self):
@@ -39,6 +43,8 @@ class CompilerTests(unittest.TestCase):
 
         self.assertNotIn(("PipelineSegment", "exact_coordinates"), after_readable)
         self.assertIn("assess_excavation_risk", after.product_manifest["actions"])
+        self.assertIn("excavation_area: dict", after.python_osdk)
+        self.assertIn('action_id="assess_excavation_risk"', after.python_osdk)
         self.assertEqual(after.product_manifest["version"], "1.1.0")
         self.assertEqual(before.product_manifest["id"], after.product_manifest["id"])
 

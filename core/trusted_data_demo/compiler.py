@@ -85,6 +85,50 @@ def _ontology_model(doir: Dict[str, Any], product: Dict[str, Any]) -> Dict[str, 
 
 def _python_osdk(product: Dict[str, Any]) -> str:
     class_name = "".join(part.title() for part in product["id"].split("-")) + "Client"
+    if product["id"] == "enterprise-energy-credit":
+        return (
+            f"class {class_name}:\n"
+            f"    def __init__(self, runtime):\n"
+            f"        self.runtime = runtime\n\n"
+            f"    def compute_credit_features(self, *, enterprise_id: str, months: int = 12, entitlement_id: str):\n"
+            f"        payload = {{\n"
+            f"            \"enterprise_id\": enterprise_id,\n"
+            f"            \"months\": months,\n"
+            f"            \"entitlement_id\": entitlement_id,\n"
+            f"        }}\n"
+            f"        return self.runtime.execute_action(\n"
+            f"            product_id=\"enterprise-energy-credit\",\n"
+            f"            action_id=\"compute_credit_features\",\n"
+            f"            payload=payload,\n"
+            f"        )\n"
+        )
+    if product["id"] == "changchun-excavation-risk":
+        return (
+            f"class {class_name}:\n"
+            f"    def __init__(self, runtime):\n"
+            f"        self.runtime = runtime\n\n"
+            f"    def assess_excavation_risk(\n"
+            f"        self,\n"
+            f"        *,\n"
+            f"        project_id: str,\n"
+            f"        excavation_area: dict,\n"
+            f"        excavation_depth: float,\n"
+            f"        construction_method: str,\n"
+            f"        entitlement_id: str,\n"
+            f"    ):\n"
+            f"        payload = {{\n"
+            f"            \"project_id\": project_id,\n"
+            f"            \"excavation_area\": excavation_area,\n"
+            f"            \"excavation_depth\": excavation_depth,\n"
+            f"            \"construction_method\": construction_method,\n"
+            f"            \"entitlement_id\": entitlement_id,\n"
+            f"        }}\n"
+            f"        return self.runtime.execute_action(\n"
+            f"            product_id=\"changchun-excavation-risk\",\n"
+            f"            action_id=\"assess_excavation_risk\",\n"
+            f"            payload=payload,\n"
+            f"        )\n"
+        )
     actions = "\n".join(
         f"    def {action}(self, **payload):\n"
         f"        return self.runtime.execute_action('{product['id']}', '{action}', payload)\n"

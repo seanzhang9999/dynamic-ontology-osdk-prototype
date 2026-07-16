@@ -85,6 +85,7 @@ class TrustedDataDemo:
             product_package["python_osdk"]
             + "\n\n"
             + "# 智能体 Agent 实际调用：只传业务参数和授权句柄，不传 SQL、表名或连接串\n"
+            + "# entitlement_id 是 Policy Service 签发的授权许可编号，限定用途、Provider、数据主体、期限和配额\n"
             + "client = EnterpriseEnergyCreditClient(runtime=provider_runtime)\n"
             + "credit_result = client.compute_credit_features(\n"
             + f"    enterprise_id=\"{enterprise_id}\",\n"
@@ -106,6 +107,7 @@ class TrustedDataDemo:
             product_package["python_osdk"]
             + "\n\n"
             + "# 智能体 Agent 实际调用：提交工程参数和区域，坐标/管线明细留在 Runtime 内部\n"
+            + "# entitlement_id 是 Policy Service 签发的授权许可编号，限定用途、Provider、工程主体、期限和配额\n"
             + "client = ChangchunExcavationRiskClient(runtime=changchun_runtime)\n"
             + "risk_result = client.assess_excavation_risk(\n"
             + f"    project_id=\"{project_id}\",\n"
@@ -495,11 +497,14 @@ class TrustedDataDemo:
             },
             {
                 "title": "OSDK 调用动态本体动作",
-                "actor": "Product OSDK",
-                "detail": "compute_credit_features 绑定到本体动作，动作声明了内部依赖字段。",
-                "facts": product_package["runtime_binding"]["internal_dependencies"][
-                    "compute_credit_features"
-                ],
+                "actor": "Product OSDK + Runtime Binding",
+                "detail": "上一段代码把企业 ID、月份和授权编号交给 action_id=compute_credit_features；Runtime Binding 再按本体动作声明解析内部依赖。depends_on 不是外部传参，而是数据域内要读取/计算的本体字段。",
+                "facts": {
+                    "external_payload": ["enterprise_id", "months", "entitlement_id"],
+                    "ontology_action": product_package["runtime_binding"][
+                        "internal_dependencies"
+                    ]["compute_credit_features"],
+                },
             },
             {
                 "title": "Runtime 将本体字段映射到底层数据",
@@ -701,11 +706,20 @@ class TrustedDataDemo:
             },
             {
                 "title": "OSDK 调用动态本体动作",
-                "actor": "Product OSDK",
-                "detail": "assess_excavation_risk 绑定到 PipelineSegment 与 ExcavationProject 本体对象。",
-                "facts": product_package["runtime_binding"]["internal_dependencies"][
-                    "assess_excavation_risk"
-                ],
+                "actor": "Product OSDK + Runtime Binding",
+                "detail": "上一段代码只提交工程参数、区域和授权编号；Runtime Binding 再按本体动作声明解析 PipelineSegment 与 ExcavationProject 的内部依赖。depends_on 不是外部传参，而是数据域内计算风险需要用到的本体字段。",
+                "facts": {
+                    "external_payload": [
+                        "project_id",
+                        "excavation_area",
+                        "excavation_depth",
+                        "construction_method",
+                        "entitlement_id",
+                    ],
+                    "ontology_action": product_package["runtime_binding"][
+                        "internal_dependencies"
+                    ]["assess_excavation_risk"],
+                },
             },
             {
                 "title": "Runtime 将本体映射到 GIS/IoT 底层表",
