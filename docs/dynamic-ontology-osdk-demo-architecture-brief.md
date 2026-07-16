@@ -1,4 +1,6 @@
-# 动态本体 OSDK 可信数据产品 Demo：从问题到演示的完整说明
+# 面向 Agent 时代的可信数据空间网络 Demo
+
+副标题：动态本体 OSDK + awiki.ai Agent 网络 + 可信数据产品流转
 
 版本：2026-07-16  
 项目仓库：[seanzhang9999/dynamic-ontology-osdk-prototype](https://github.com/seanzhang9999/dynamic-ontology-osdk-prototype)  
@@ -6,7 +8,7 @@
 
 ## 1. 我们想解决什么目标
 
-这个 Demo 的目标不是证明“我们能生成一个 SDK”。如果只是生成 SDK，技术难度并不高，也不能形成真正的可信数据产品能力。
+这个 Demo 的目标不是证明“我们能生成一个 SDK”。如果只是生成 SDK，技术难度并不高，也不能形成真正的可信数据产品能力，更不能支撑 awiki.ai 想拓展的 Agent 网络市场。
 
 这个 Demo 真正想证明的是：
 
@@ -14,7 +16,8 @@
 把不同数据域里的结构化数据、非结构化数据、GIS 数据和业务规则，
 映射成动态本体中间层；
 再把动态本体按用途、授权、分类分级和质量规则编译成数据产品；
-最后把数据产品暴露成 Agent 可安全调用的 Product OSDK / MCP Tool。
+最后把数据产品暴露成 Agent 可安全调用的 Product OSDK / MCP Tool；
+并让买方 Agent、服务方 Agent、数据提供方内部数字员工在 awiki.ai 网络中协作。
 ```
 
 换成业务语言，就是：
@@ -37,6 +40,8 @@
 | Entitlement | 授权许可，说明谁为了什么用途，在什么期限和范围内可以调用哪个产品 |
 | Receipt | 执行凭证，证明结果来自某个授权、某个应用、某个本体版本、某个产品版本和某个 Runtime |
 | 可信数据空间网关 | OSDK workload 和 Runtime 之间的可信边界，负责身份、签名、授权、路由和审计 |
+| awiki.ai Agent 网络 | 让 Agent 具备身份、发现、消息协作和异步通知能力，适合承载数据服务交易过程 |
+| 数据服务数字员工部 | 数据提供方内部的一组 Agent，帮助完成产品上架、授权、质量检查、编译、交付和售后复核 |
 
 ### 1.2 Demo 最终要让人相信什么
 
@@ -46,6 +51,7 @@
 | 同一应用可以跨异构 Provider | 同一个企业用电征信 OSDK 动作分别进入国家电网 Runtime 和综合能源 Runtime |
 | 本体不是展示概念，而是编译源 | 动态本体运维中能看到全量本体、产品投影、编译裁剪和接口变化 |
 | Agent 有真实价值 | Agent 发现产品、申请授权、调用 OSDK、适配接口变化、验证 Receipt |
+| awiki.ai 能成为数据服务网络底座 | 买方 Agent、服务方 Agent、Provider 内部数字员工通过 Agent 网络协作和异步通知 |
 | 安全边界不靠 SDK 自觉 | Policy、Gateway、Runtime、Sandbox 和 Receipt 共同约束调用 |
 
 ## 2. 现有方案通常有什么问题
@@ -391,11 +397,207 @@ flowchart LR
 - 所有调用经可信数据空间网关。
 - 所有调用带签名、授权、合约、路由和审计 envelope。
 
-## 5. 场景设计
+## 5. awiki.ai 在本方案中的位置
+
+如果说动态本体 OSDK 解决的是“数据能力如何被安全调用”，那么 awiki.ai 解决的是“Agent 如何成为可信数据服务网络里的协作主体”。
+
+两者结合后的定位是：
+
+```text
+awiki.ai 承载 Agent 身份、发现、消息、协作和异步通知；
+动态本体 OSDK 承载数据产品接口、授权调用和开发者体验；
+可信数据空间网关、Policy、Runtime 和 Receipt 承载强制执行和结果可信。
+```
+
+这使 Demo 从“可信数据产品执行 Demo”升级为：
+
+```text
+面向 Agent 时代的可信数据空间网络 Demo。
+```
+
+### 5.1 awiki.ai 适合补哪一层
+
+在整体架构中，awiki.ai 应该成为 Agent 可信网络层，位于“业务用户/Agent”和“Product OSDK/可信数据空间网关”之间。
+
+```mermaid
+flowchart LR
+    Buyer["买方 Agent<br/>银行、施工方、企业客户"] --> AWiki["awiki.ai Agent 网络<br/>身份、发现、消息、异步通知"]
+    ProviderFront["服务方前台 Agent<br/>咨询、报价、授权协同"] --> AWiki
+    ProviderOffice["数据服务数字员工部<br/>建模、质检、编译、交付"] --> AWiki
+    AWiki --> OSDK["Product OSDK / MCP Tool"]
+    OSDK --> Gateway["可信数据空间网关"]
+    Gateway --> Policy["Policy / Entitlement"]
+    Gateway --> Runtime["Provider Runtime"]
+    Runtime --> Data["数据域资产"]
+    Runtime --> Receipt["Execution Receipt"]
+    Receipt --> AWiki
+```
+
+这一层的关键价值是：
+
+| awiki.ai 能力 | 在数据服务网络中的作用 |
+| --- | --- |
+| Agent 身份 | 让买方、服务方、Provider 内部 Agent 都成为可识别、可授权、可追踪的主体 |
+| Agent 发现 | 买方 Agent 可以发现有哪些可信数据服务，而不是人工翻 API 文档 |
+| Agent 消息 | 授权申请、用途说明、审批补充、交付通知可以变成跨组织会话 |
+| 异步通知 | 数据服务天然可能需要审批、质检、计算和复核，不能只依赖同步 API |
+| 人-Agent 协同 | 高风险授权、特殊用途合同、争议处理仍可让人类审批介入 |
+
+### 5.2 买方侧 Agent 与服务侧 Agent 如何配合
+
+买方侧 Agent 代表数据服务需求方，例如银行、施工单位、保险公司或企业客户。它负责把业务目标转成数据服务任务：
+
+- 描述需求和用途。
+- 发现可用数据产品。
+- 比较产品说明、质量口径、价格和授权要求。
+- 申请 entitlement。
+- 调用 OSDK/MCP。
+- 接收结果和 Receipt。
+- 请求 Verifier Agent 复核凭证。
+
+服务侧 Agent 代表数据服务提供方的前台能力。它负责接待、解释、协调和交付：
+
+- 回答数据产品能解决什么问题。
+- 判断是否需要人工审批。
+- 协调 Policy Agent 签发 entitlement。
+- 调度内部数据服务数字员工。
+- 触发 Runtime 执行。
+- 异步通知进度。
+- 交付结果、Receipt 和验证说明。
+
+这就把传统“买数据”的过程变成了 Agent 之间的可信服务协作：
+
+```text
+买方 Agent 提出任务；
+服务方 Agent 解释产品、申请授权、协调执行；
+Provider 内部数字员工完成生产、治理、质检和交付；
+Runtime 在数据域内计算；
+Receipt 通过 awiki.ai 网络回传和验证。
+```
+
+### 5.3 数据交易服务的数字员工部门
+
+很多数据提供方并不缺数据，真正缺的是持续运营数据服务的人：数据产品经理、数据治理人员、合规审批、质量检查、交付运维和客户成功。awiki.ai 可以把这些角色组织成一个“数据交易服务数字员工部门”。
+
+| 数字员工 | 负责什么 | 降低哪类工作强度 |
+| --- | --- | --- |
+| 数据产品经理 Agent | 把内部数据能力包装成数据产品，生成产品说明和用途边界 | 降低产品化和售前解释成本 |
+| 本体建模 Agent | 辅助把源表、文档、GIS、规则映射到动态本体 | 降低建模和口径整理成本 |
+| 分类分级 Agent | 识别敏感字段，建议 `HIDDEN`、`COMPUTE_ONLY`、`AGGREGATE_ONLY` 等分类 | 降低合规初筛成本 |
+| 质量审计 Agent | 检查覆盖率、缺失率、时间窗口和异常值 | 降低交付前质检成本 |
+| 产品编译 Agent | 调用 Product Compiler 生成 OSDK、MCP、OpenAPI 和 Runtime Binding | 降低发布和版本维护成本 |
+| 授权运营 Agent | 处理用途、期限、主体、配额、撤销和审批协同 | 降低授权运营成本 |
+| 交付运维 Agent | 跟踪任务状态、失败重试、异步通知和交付包 | 降低交付过程盯人成本 |
+| 凭证复核 Agent | 验证 Receipt、签名、hash 和版本链 | 降低售后复核和争议处理成本 |
+
+这个“数字员工部门”是 awiki.ai 拓展数据服务市场的关键抓手。它不要求数据提供方一开始就有完整数据产品团队，而是先帮它把服务流程跑起来。
+
+### 5.4 异步通知为什么重要
+
+真实数据服务很少都是秒级同步返回。常见情况包括：
+
+- 授权审批需要人工确认。
+- 数据质量检查需要几分钟。
+- GIS 风险计算需要异步任务。
+- 跨 Provider 联合分析需要等待多个 Runtime。
+- 特殊用途合同需要补充材料。
+- Receipt 复核可能由独立 Verifier Agent 完成。
+
+awiki.ai 的消息和会话能力可以把这些状态变成自然的协作流：
+
+```text
+Buyer Agent:
+我要评估企业 A 的用电征信。
+
+Provider Service Agent:
+已收到，正在匹配数据产品。
+
+Policy Agent:
+需要授权，已生成申请。
+
+Human Approver:
+已批准。
+
+Runtime Agent:
+任务开始执行。
+
+Quality Agent:
+数据覆盖率 92%，满足门槛。
+
+Audit Agent:
+Receipt 已签发。
+
+Provider Service Agent:
+结果已返回，可验证。
+```
+
+这比传统 API 的 `pending / success / failed` 更适合 Agent 时代，因为它保留了协作上下文、责任主体和可复核过程。
+
+### 5.5 awiki.ai 不替代哪些模块
+
+边界要讲清楚。awiki.ai 增强 Agent 可信协作网络，但不应该替代数据产品执行边界。
+
+| 能力 | awiki.ai 适合承担吗 | 本方案中应由谁承担 |
+| --- | --- | --- |
+| Agent 身份、发现、消息 | 适合 | awiki.ai Agent 网络 |
+| 异步任务通知 | 适合 | awiki.ai + Gateway/Audit 事件 |
+| 数据产品接口生成 | 不适合替代 | Product Compiler / OSDK Generator |
+| 字段分类分级裁剪 | 不适合替代 | Product Compiler |
+| 授权最终裁决 | 不应只靠消息层 | Policy Service |
+| 原始数据访问 | 不适合 | Provider Runtime 内部 |
+| Receipt 签发 | 不适合替代 | Audit Service / Runtime 私钥 |
+| 数据空间强制执行 | 不适合单独承担 | Trusted Data Space Gateway |
+
+因此，最稳妥的组合方式是：
+
+```text
+awiki.ai 负责 Agent 网络协作；
+OSDK 负责产品调用体验；
+Gateway/Policy/Runtime/Receipt 负责可信执行闭环。
+```
+
+### 5.6 Demo 应该新增的 awiki.ai 视角
+
+为了让 awiki.ai 的价值更明显，Demo Console 可以新增一个“Agent 可信网络 / 数据服务数字员工部”视角，展示三条泳道：
+
+| 泳道 | 展示内容 |
+| --- | --- |
+| 买方 Agent | 业务目标、产品发现、授权申请、OSDK 调用、Receipt 验证 |
+| 服务方前台 Agent | 产品解释、报价/用途确认、授权协同、进度通知、结果交付 |
+| 数据提供方内部数字员工 | 本体建模、分类分级、质量检查、产品编译、Runtime 调度、凭证复核 |
+
+用电征信场景可以这样演示：
+
+```mermaid
+sequenceDiagram
+    participant B as 买方 Bank Agent
+    participant A as awiki.ai Agent Network
+    participant S as 服务方 Service Agent
+    participant P as Policy Agent
+    participant D as 数据产品数字员工
+    participant R as Provider Runtime
+    participant V as Receipt Verifier
+
+    B->>A: 发现企业用电征信数据服务
+    A->>S: 路由到 Provider Service Agent
+    S->>B: 返回产品说明、OSDK/MCP、用途要求
+    B->>S: 申请授权
+    S->>P: 校验用途、主体、期限、配额
+    P->>S: 签发 entitlement_id
+    B->>R: 通过 OSDK/Gateway 调用产品动作
+    R->>D: 本体映射、质量检查、特征计算
+    R->>B: 返回 CreditResult
+    R->>V: 签发并登记 Receipt
+    V->>B: 异步通知凭证验证结果
+```
+
+这一视角会让“数据交易服务的数字员工部门”变得具体：它不是一个管理概念，而是一组可参与生产、授权、交付和复核的 Agent。
+
+## 6. 场景设计
 
 当前 Demo 使用两个业务场景和一个运维视图来证明机制。
 
-### 5.1 场景一：企业用电征信可信数据产品
+### 6.1 场景一：企业用电征信可信数据产品
 
 业务问题：
 
@@ -431,7 +633,7 @@ flowchart LR
 如果跨 Provider 汇总，汇总的是产品结果或特征摘要，不是原始账单、缴费流水或连接串。
 ```
 
-### 5.2 场景二：长春城市生命线开挖风险产品
+### 6.2 场景二：长春城市生命线开挖风险产品
 
 业务问题：
 
@@ -456,7 +658,7 @@ flowchart TD
     Risk --> Output["风险等级、影响资产类型、建议、凭证"]
 ```
 
-### 5.3 场景三：动态本体运维
+### 6.3 场景三：动态本体运维
 
 业务问题：
 
@@ -472,11 +674,11 @@ flowchart TD
 - 展示重新编译后 OSDK 接口收缩。
 - 展示 Agent 如何读取新 OSDK 并避开已收缩接口。
 
-## 6. 基于架构的 Demo 演示路径
+## 7. 基于架构的 Demo 演示路径
 
 这一节把页面操作和底层架构对应起来，便于讲解时不只是“点按钮”，而是说明每一步解决什么问题。
 
-### 6.1 Demo 开场：先讲目标和问题
+### 7.1 Demo 开场：先讲目标和问题
 
 建议开场用 1 分钟说明：
 
@@ -496,7 +698,7 @@ flowchart TD
 
 ![Agent 价值闭环与用电征信工作台](assets/demo-screenshots/01-agent-value-and-power-workbench.png)
 
-### 6.2 用电征信 Demo：从企业查询到可信结果
+### 7.2 用电征信 Demo：从企业查询到可信结果
 
 页面操作：
 
@@ -536,7 +738,7 @@ result = client.compute_credit_features(
 
 ![用电征信执行链路](assets/demo-screenshots/02-power-credit-execution-trace.png)
 
-### 6.3 长春开挖风险 Demo：敏感坐标只参与计算不输出
+### 7.3 长春开挖风险 Demo：敏感坐标只参与计算不输出
 
 页面操作：
 
@@ -566,7 +768,7 @@ result = client.assess_excavation_risk(
 )
 ```
 
-### 6.4 动态本体运维 Demo：证明本体真的会影响接口
+### 7.4 动态本体运维 Demo：证明本体真的会影响接口
 
 页面操作：
 
@@ -586,7 +788,7 @@ result = client.assess_excavation_risk(
 
 ![动态本体运维视图](assets/demo-screenshots/03-dynamic-ontology-ops.png)
 
-### 6.5 部署视图 Demo：说明 OSDK workload 和可信网关
+### 7.5 部署视图 Demo：说明 OSDK workload 和可信网关
 
 页面操作：
 
@@ -626,7 +828,7 @@ result = client.compute_credit_features(
 
 ![可信数据空间网关执行过程](assets/demo-screenshots/05-gateway-execution-trace.png)
 
-## 7. Execution Receipt 如何解释
+## 8. Execution Receipt 如何解释
 
 Receipt 是执行凭证，不是普通日志。它要回答：
 
@@ -671,11 +873,11 @@ Receipt 是执行凭证，不是普通日志。它要回答：
 - hash 链是否连续。
 - 授权、产品、本体和 Runtime 版本是否符合声明。
 
-## 8. 实施门槛评估
+## 9. 实施门槛评估
 
 OSDK 本身确实不是最难的部分。真正难的是让 OSDK 调用可信、可控、可演进、可运营。
 
-### 8.1 难度较低的部分
+### 9.1 难度较低的部分
 
 | 模块 | 难度 | 原因 |
 | --- | --- | --- |
@@ -684,7 +886,7 @@ OSDK 本身确实不是最难的部分。真正难的是让 OSDK 调用可信、
 | MCP Tool / OpenAPI 生成 | 低到中 | 从产品动作和 schema 生成机器可读工具描述 |
 | 参数校验 | 低到中 | 可依赖 Pydantic、JSON Schema、OpenAPI |
 
-### 8.2 真正困难的部分
+### 9.2 真正困难的部分
 
 | 模块 | 难度 | 原因 |
 | --- | --- | --- |
@@ -704,7 +906,7 @@ OSDK 是易用入口，不是可信边界。
 可信边界在 Runtime、Policy、Gateway、Sandbox 和 Receipt 这一整套系统里。
 ```
 
-## 9. 对外表达建议
+## 10. 对外表达建议
 
 不要把卖点说成：
 
@@ -715,18 +917,26 @@ OSDK 是易用入口，不是可信边界。
 建议表达为：
 
 ```text
-我们把动态本体治理后的数据能力编译成可被 Agent 调用的数据产品接口。
-客户或 Agent 像调用普通 SDK 一样调用产品动作；
-但这个 SDK 不能越权、不能查原始表、不能绕过授权。
-实际计算在受控 Runtime 内完成，每次结果都有可验证凭证。
+awiki.ai 面向 Agent 时代重做可信数据服务网络。
+买方 Agent 在网络中发现、申请和调用数据服务；
+服务方 Agent 和数据服务数字员工完成产品解释、授权协同、质检、编译、交付和复核；
+动态本体 OSDK 把数据能力变成可授权、可执行、可验证的数据产品；
+Runtime 在数据域内计算，Receipt 证明结果可信。
 ```
 
 更短的客户版：
 
 ```text
-像调 SDK 一样调数据产品；
-像走数据空间一样受控流转；
-像验签一样验证结果可信。
+用 Agent 网络重做数据交易：
+不是交易数据文件，而是交易可授权、可执行、可验证的数据能力。
+```
+
+面向数据提供方的版本：
+
+```text
+awiki.ai 可以为数据提供方搭建一个数据交易服务数字员工部，
+帮助完成数据产品上架、授权运营、质量检查、OSDK 编译、异步交付和凭证复核；
+让没有完整数据产品团队的机构，也能低成本进入可信数据服务市场。
 ```
 
 ## 附录 A：当前 Demo 截图
@@ -764,4 +974,5 @@ OSDK 是易用入口，不是可信边界。
 | Entitlement | 授权许可，描述谁为了什么用途在什么范围内可以调用哪个产品 |
 | Trusted Data Space Gateway | 可信数据空间网关，负责身份、签名、合约、路由、审计和跨域边界 |
 | Execution Receipt | 执行凭证，证明一次结果基于指定授权、应用、本体、产品和 Runtime 产生 |
-
+| awiki.ai Agent Network | 面向 Agent 的身份、发现、消息协作和异步通知网络 |
+| 数据服务数字员工部 | 数据提供方内部的一组 Agent，负责数据产品生产、授权运营、交付和复核 |
