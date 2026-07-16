@@ -176,11 +176,31 @@ const scenarioStory = {
 };
 
 const agentValue = [
-  ["发现", "读取产品目录和 OSDK/MCP 描述，知道有哪些可信数据产品可调用。"],
-  ["授权", "按用途、数据域、调用方和期限申请 entitlement，不绕过 Policy。"],
-  ["编排", "跨 Provider 调用同一产品动作，但不接触连接串、SQL 或原始文件。"],
-  ["适配", "本体分类变化后重新读取新 OSDK，自动避开已收缩的接口。"],
-  ["验证", "拿到结果后验证 receipt，说明授权、应用、本体、产品、Runtime 和输入输出 hash。"],
+  {
+    label: "发现",
+    section: "顶部意图条 + 产品 OSDK",
+    problem: "告诉用户智能体先读产品目录和 OSDK/MCP 描述，而不是猜表结构。",
+  },
+  {
+    label: "授权",
+    section: "实时运行情况 + 授权指标",
+    problem: "说明每次调用都有用途、数据域、调用方和期限约束，不绕过 Policy。",
+  },
+  {
+    label: "编排",
+    section: "右侧执行明细",
+    problem: "展示同一命名动作如何跨 Provider 执行，同时不接触 SQL、连接串或原始文件。",
+  },
+  {
+    label: "适配",
+    section: "动态本体运维",
+    problem: "展示本体分类变化后，产品投影和 OSDK 接口会重新编译收缩。",
+  },
+  {
+    label: "验证",
+    section: "凭证中心 / Receipt",
+    problem: "说明结果不是一句话答案，而是带授权、应用、本体、产品、Runtime 和 hash 的可验证凭证。",
+  },
 ];
 
 const fullOntologyNodes = [
@@ -817,8 +837,6 @@ function TaskPanel({ activeTab, task, latestResult, productPackage, cleared, onC
         </>
       )}
 
-      <AgentValuePanel />
-
       <div className="osdk-compact">
         <div className="mini-title">
           <Code2 size={15} />
@@ -833,15 +851,21 @@ function TaskPanel({ activeTab, task, latestResult, productPackage, cleared, onC
 function AgentValuePanel() {
   return (
     <div className="agent-value-panel">
-      <div className="mini-title">
-        <Bot size={15} />
-        智能体 Agent 价值闭环
+      <div className="agent-value-title">
+        <div>
+          <Bot size={17} />
+          <strong>智能体 Agent 价值闭环</strong>
+        </div>
+        <span>
+          每格对应：闭环步骤 / 对应区域 / 解决的问题。先看这张地图，再看下面三个 Tab。
+        </span>
       </div>
       <div className="agent-value-list">
-        {agentValue.map(([label, description]) => (
-          <div key={label}>
-            <strong>{label}</strong>
-            <span>{description}</span>
+        {agentValue.map((item) => (
+          <div key={item.label}>
+            <strong>{item.label}</strong>
+            <span>{item.section}</span>
+            <p>{item.problem}</p>
           </div>
         ))}
       </div>
@@ -1140,6 +1164,8 @@ function App() {
         <Metric label="作业" value={Object.keys(state?.jobs || {}).length} />
         <Metric label="审计事件" value={state?.audit_events?.length || 0} />
       </div>
+
+      <AgentValuePanel />
 
       <TabNav activeTab={activeTab} setActiveTab={setActiveTab} />
       <NarrativeStrip

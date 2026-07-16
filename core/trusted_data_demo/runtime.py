@@ -73,6 +73,49 @@ class TrustedDataDemo:
             for enterprise_id in enterprise_ids[:24]
         ]
 
+    def _power_osdk_code(
+        self,
+        *,
+        product_package: Dict[str, Any],
+        enterprise_id: str,
+        months: int,
+        entitlement_id: str,
+    ) -> str:
+        return (
+            product_package["python_osdk"]
+            + "\n\n"
+            + "# 智能体 Agent 实际调用：只传业务参数和授权句柄，不传 SQL、表名或连接串\n"
+            + "client = EnterpriseEnergyCreditClient(runtime=provider_runtime)\n"
+            + "credit_result = client.compute_credit_features(\n"
+            + f"    enterprise_id=\"{enterprise_id}\",\n"
+            + f"    months={months},\n"
+            + f"    entitlement_id=\"{entitlement_id}\",\n"
+            + ")\n"
+        )
+
+    def _changchun_osdk_code(
+        self,
+        *,
+        product_package: Dict[str, Any],
+        project_id: str,
+        excavation_depth: float,
+        construction_method: str,
+        entitlement_id: str,
+    ) -> str:
+        return (
+            product_package["python_osdk"]
+            + "\n\n"
+            + "# 智能体 Agent 实际调用：提交工程参数和区域，坐标/管线明细留在 Runtime 内部\n"
+            + "client = ChangchunExcavationRiskClient(runtime=changchun_runtime)\n"
+            + "risk_result = client.assess_excavation_risk(\n"
+            + f"    project_id=\"{project_id}\",\n"
+            + f"    excavation_depth={excavation_depth},\n"
+            + f"    construction_method=\"{construction_method}\",\n"
+            + "    excavation_area={\"type\": \"Polygon\", \"coordinates\": \"<GeoJSON>\"},\n"
+            + f"    entitlement_id=\"{entitlement_id}\",\n"
+            + ")\n"
+        )
+
     def source_tables(self) -> Dict[str, List[Dict[str, Any]]]:
         grid_preview = self.power_data["grid"][:4]
         integrated_preview = self.power_data["integrated-energy"][:4]
@@ -443,7 +486,12 @@ class TrustedDataDemo:
                 "title": "应用获得 Product OSDK 调用面",
                 "actor": "Generated OSDK",
                 "detail": "OSDK 由动态本体和产品投影生成，只暴露命名动作。",
-                "code": product_package["python_osdk"],
+                "code": self._power_osdk_code(
+                    product_package=product_package,
+                    enterprise_id=enterprise_id,
+                    months=months,
+                    entitlement_id=entitlement_id,
+                ),
             },
             {
                 "title": "OSDK 调用动态本体动作",
@@ -643,7 +691,13 @@ class TrustedDataDemo:
                 "title": "应用获得 Product OSDK 调用面",
                 "actor": "Generated OSDK",
                 "detail": "OSDK 只暴露 assess_excavation_risk 动作和风险摘要输出。",
-                "code": product_package["python_osdk"],
+                "code": self._changchun_osdk_code(
+                    product_package=product_package,
+                    project_id=project_id,
+                    excavation_depth=excavation_depth,
+                    construction_method=construction_method,
+                    entitlement_id=entitlement_id,
+                ),
             },
             {
                 "title": "OSDK 调用动态本体动作",
