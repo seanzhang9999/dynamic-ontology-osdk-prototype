@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+"""Render architecture diagram PNGs used by the brief."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from textwrap import wrap
+
+from PIL import Image, ImageDraw, ImageFont
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT_DIR = ROOT / "docs" / "assets" / "architecture-diagrams"
+FONT_PATH = Path("/System/Library/Fonts/STHeiti Medium.ttc")
+
+INK = "#0f172a"
+MUTED = "#64748b"
+BLUE = "#165dff"
+TEAL = "#0f766e"
+GREEN = "#16a34a"
+ORANGE = "#d97706"
+RED = "#dc2626"
+BORDER = "#bfd0e6"
+BOX = "#f8fbff"
+TEAL_BOX = "#eefcf8"
+GREEN_BOX = "#f0fdf4"
+ORANGE_BOX = "#fff7ed"
+RED_BOX = "#fef2f2"
+
+
+def font(size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(str(FONT_PATH), size=size)
+
+
+def text_lines(text: str, max_chars: int) -> list[str]:
+    lines: list[str] = []
+    for part in text.split("\n"):
+        if not part:
+            lines.append("")
+            continue
+        lines.extend(wrap(part, width=max_chars, break_long_words=False, replace_whitespace=False))
+    return lines
+
+
+def rounded(draw: ImageDraw.ImageDraw, box, fill, outline=BORDER, width=2, radius=18) -> None:
+    draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
+
+
+def pixel_wrap(text: str, max_width: int, font_obj: ImageFont.FreeTypeFont) -> list[str]:
+    lines: list[str] = []
+    for part in text.split("\n"):
+        current = ""
+        for ch in part:
+            candidate = current + ch
+            if current and draw_probe.textlength(candidate, font=font_obj) > max_width:
+                lines.append(current)
+                current = ch
+            else:
+                current = candidate
+        if current:
+            lines.append(current)
+        if not part:
+            lines.append("")
+    return lines
+
+
+draw_probe_image = Image.new("RGB", (1, 1), "white")
+draw_probe = ImageDraw.Draw(draw_probe_image)
+
+
+def draw_wrapped(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[int, int],
+    text: str,
+    max_chars_or_px: int,
+    font_obj: ImageFont.FreeTypeFont,
+    fill=INK,
+    line_gap=7,
+) -> int:
+    x, y = xy
+    if max_chars_or_px > 80:
+        lines = pixel_wrap(text, max_chars_or_px, font_obj)
+    else:
+        lines = text_lines(text, max_chars_or_px)
+    for line in lines:
+        draw.text((x, y), line, font=font_obj, fill=fill)
+        y += font_obj.size + line_gap
+    return y
+
+
+def arrow(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple[int, int], color=TEAL, width=4) -> None:
+    draw.line([start, end], fill=color, width=width)
+    x1, y1 = start
+    x2, y2 = end
+    if x2 >= x1:
+        points = [(x2, y2), (x2 - 15, y2 - 9), (x2 - 15, y2 + 9)]
+    else:
+        points = [(x2, y2), (x2 + 15, y2 - 9), (x2 + 15, y2 + 9)]
+    draw.polygon(points, fill=color)
+
+
+def flow_box(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    title: str,
+    body: str,
+    accent=TEAL,
+    fill=BOX,
+) -> None:
+    rounded(draw, box, fill=fill)
+    x1, y1, _, _ = box
+    draw.rectangle((x1, y1 + 2, x1 + 8, box[3] - 2), fill=accent)
+    draw.text((x1 + 24, y1 + 20), title, font=font(28), fill=INK)
+    draw_wrapped(draw, (x1 + 24, y1 + 62), body, box[2] - box[0] - 52, font(20), fill=MUTED, line_gap=8)
+
+
+def render_agent_value() -> None:
+    img = Image.new("RGB", (1900, 1200), "white")
+    draw = ImageDraw.Draw(img)
+    draw.text((42, 30), "Agent 价值闭环与可信网络位置", font=font(42), fill=INK)
+    draw.text((42, 88), "Agent 不理解源表，而是发现产品、申请授权、编排调用、适配接口变化并验证执行凭证。", font=font(24), fill=MUTED)
+
+    boxes = [
+        ("发现", "读取产品目录\nOSDK / MCP 描述", TEAL, TEAL_BOX),
+        ("授权", "申请 entitlement\n不绕过 Policy", TEAL, BOX),
+        ("编排", "调用产品动作\n不接触 SQL", TEAL, BOX),
+        ("适配", "读取新 OSDK\n避开收缩接口", TEAL, BOX),
+        ("验证", "校验 receipt\n确认 hash 和版本", TEAL, BOX),
+    ]
+    x = 42
+    y = 150
+    w = 330
+    h = 170
+    gap = 30
+    coords = []
+    for title, body, accent, fill in boxes:
+        box = (x, y, x + w, y + h)
+        flow_box(draw, box, title, body, accent, fill)
+        coords.append(box)
+        x += w + gap
+    for left, right in zip(coords, coords[1:]):
+        arrow(draw, (left[2] + 8, y + h // 2), (right[0] - 10, y + h // 2))
+
+    draw.text((42, 375), "Agent 在可信网络里的位置", font=font(32), fill=INK)
+    node_y = 470
+    node_h = 120
+    nodes = [
+        ((42, node_y, 330, node_y + node_h), "业务用户", "自然语言目标 / 业务对象", BLUE),
+        ((410, node_y - 28, 780, node_y + node_h + 28), "Agent Workload", "计划、选择产品、申请授权、编排调用", TEAL),
+        ((870, node_y - 28, 1240, node_y + node_h + 28), "Product OSDK", "命名 Query/Action，不暴露底层表", GREEN),
+        ((1330, node_y - 28, 1858, node_y + node_h + 28), "可信数据空间网关", "身份、签名、合约、路由、审计", ORANGE),
+    ]
+    for box, title, body, accent in nodes:
+        flow_box(draw, box, title, body, accent, BOX)
+    for left, right in zip(nodes, nodes[1:]):
+        arrow(draw, (left[0][2] + 12, (left[0][1] + left[0][3]) // 2), (right[0][0] - 12, (right[0][1] + right[0][3]) // 2), color=TEAL)
+
+    runtime = (1330, 725, 1858, 845)
+    policy = (870, 725, 1240, 845)
+    flow_box(draw, runtime, "Provider Runtime", "本地映射、本地计算、原始数据不出域", TEAL, BOX)
+    flow_box(draw, policy, "Policy / Entitlement", "用途、期限、粒度、撤销状态", RED, BOX)
+    arrow(draw, (1585, 590), (1585, 712), color=ORANGE)
+    arrow(draw, (1320, 785), (1252, 785), color=RED)
+
+    callout = (42, 930, 1858, 1125)
+    rounded(draw, callout, fill=TEAL_BOX, outline="#99d8cf", radius=18)
+    draw.text((78, 960), "这带来的改进", font=font(28), fill=TEAL)
+    bullets = [
+        "Agent 不再被迫理解源表，而是面向可信数据产品编排。",
+        "每次调用都有授权和凭证，便于审计、撤销和复核。",
+        "本体变化会反映为 OSDK 接口变化，Agent 可以自动适配新的安全边界。",
+    ]
+    by = 1010
+    for item in bullets:
+        draw.text((82, by), "•", font=font(26), fill=TEAL)
+        draw.text((118, by), item, font=font(23), fill=INK)
+        by += 42
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    img.save(OUT_DIR / "agent-value-framework.png")
+
+
+def render_framework_structure() -> None:
+    img = Image.new("RGB", (1680, 1740), "white")
+    draw = ImageDraw.Draw(img)
+    draw.text((42, 30), "动态本体 OSDK 可信数据产品框架结构", font=font(42), fill=INK)
+    draw.text((42, 88), "从数据域资产到动态本体，再编译为受控 OSDK/MCP，并经可信网络进入 Runtime 执行。", font=font(24), fill=MUTED)
+
+    layers = [
+        ("1. 数据域资产", "结构化表、非结构化文档、GIS、监测摘要、历史隐患", BOX),
+        ("2. DOIR / 动态本体 Registry", "SourceDataset、ObjectType、PropertyType、LinkType、ActionType", BOX),
+        ("3. Product Compiler", "产品投影、分类分级、质量门槛、Runtime 能力声明", TEAL_BOX),
+        ("4. Generated Interfaces", "Python/TypeScript OSDK、MCP Tool、OpenAPI、产品 Schema", GREEN_BOX),
+        ("5. Trusted Execution Plane", "可信数据空间网关、Policy、Entitlement、Application Host、Provider Runtime", ORANGE_BOX),
+        ("6. Verification / Audit", "ExecutionReceipt、hash chain、签名、Receipt Verifier", RED_BOX),
+    ]
+    x1, x2 = 42, 1638
+    y = 155
+    h = 112
+    gap = 30
+    prev_center = None
+    for title, body, fill in layers:
+        box = (x1, y, x2, y + h)
+        rounded(draw, box, fill=fill, radius=18)
+        draw.text((x1 + 32, y + 32), title, font=font(30), fill=INK)
+        draw_wrapped(draw, (x1 + 500, y + 36), body, 55, font(23), fill=MUTED)
+        center = ((x1 + x2) // 2, y + h // 2)
+        if prev_center:
+            arrow(draw, (prev_center[0], prev_center[1] + h // 2 - 6), (center[0], y - 8), color=TEAL)
+        prev_center = center
+        y += h + gap
+
+    draw.text((42, y + 10), "两种 OSDK 部署形态", font=font(32), fill=INK)
+    y += 70
+    cards = [
+        ((42, y, 792, y + 295), "客户侧 OSDK Workload", ["客户 App / Agent", "Product OSDK", "可信数据空间网关", "Provider Runtime"]),
+        ((888, y, 1638, y + 295), "我方独立 OSDK 沙箱", ["客户代码包", "per-customer sandbox", "可信数据空间网关", "Provider Runtime"]),
+    ]
+    for card, title, steps in cards:
+        rounded(draw, card, fill="white", radius=18)
+        draw.text((card[0] + 30, card[1] + 28), title, font=font(30), fill=TEAL)
+        sx = card[0] + 35
+        sy = card[1] + 112
+        step_w = 150
+        step_h = 86
+        step_boxes = []
+        for step in steps:
+            sbox = (sx, sy, sx + step_w, sy + step_h)
+            rounded(draw, sbox, fill=BOX, radius=14)
+            draw_wrapped(draw, (sx + 16, sy + 20), step, 12, font(20), fill=INK, line_gap=5)
+            step_boxes.append(sbox)
+            sx += step_w + 48
+        for left, right in zip(step_boxes, step_boxes[1:]):
+            arrow(draw, (left[2] + 8, sy + step_h // 2), (right[0] - 8, sy + step_h // 2), color=TEAL)
+        draw_wrapped(
+            draw,
+            (card[0] + 35, card[1] + 225),
+            "共同约束：OSDK workload 不直连数据库或 Runtime 内网，所有调用都带签名、授权和审计 envelope。",
+            42,
+            font(21),
+            fill=MUTED,
+        )
+
+    callout = (42, 1432, 1638, 1660)
+    rounded(draw, callout, fill=TEAL_BOX, outline="#99d8cf", radius=18)
+    draw.text((78, 1464), "工程落地真正难点", font=font(30), fill=TEAL)
+    bullets = [
+        "动态本体编译正确性：不能把 COMPUTE_ONLY、HIDDEN 字段漏生成到外部接口。",
+        "Runtime Binding 一致性：不同 Provider 的异构数据要返回同一产品语义和质量口径。",
+        "可信网络强约束：网关、Policy、沙箱、Receipt 必须形成闭环，而不是只做 SDK 包装。",
+    ]
+    by = 1516
+    for item in bullets:
+        draw.text((82, by), "•", font=font(25), fill=TEAL)
+        draw.text((118, by), item, font=font(22), fill=INK)
+        by += 38
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    img.save(OUT_DIR / "framework-structure.png")
+
+
+def main() -> None:
+    render_agent_value()
+    render_framework_structure()
+    print(OUT_DIR / "agent-value-framework.png")
+    print(OUT_DIR / "framework-structure.png")
+
+
+if __name__ == "__main__":
+    main()
