@@ -3,11 +3,15 @@ import { createRoot } from "react-dom/client";
 import {
   Activity,
   BookOpen,
+  Bot,
+  Boxes,
   Code2,
   Database,
   FileCheck2,
+  GitBranch,
   Hammer,
   MapPinned,
+  PackageCheck,
   RefreshCcw,
   Search,
   ShieldCheck,
@@ -62,6 +66,10 @@ const objectText = {
   MonitoringSignal: "监测摘要",
   HazardEvent: "历史隐患",
   ProductProjection: "数据产品投影",
+  SourceDataset: "源数据集",
+  SourceField: "源字段",
+  RuntimeBinding: "运行时绑定",
+  ApplicationManifest: "应用清单",
   Entitlement: "授权许可",
   ExecutionReceipt: "执行凭证",
 };
@@ -146,6 +154,71 @@ const columnText = {
   output_hash: "输出哈希",
 };
 
+const scenarioStory = {
+  "power-credit": {
+    intent: "帮我查询选中企业的用电征信，并返回可验证凭证。",
+    tool: "enterprise_energy_credit.compute_credit_features",
+    value: "智能体 Agent 不写 SQL，而是读取产品目录，申请授权后并行调用两个 Provider 的 Product OSDK。",
+    boundary: "国家电网和综合能源各自在本地计算特征；银行侧只得到摘要、解释和凭证。",
+  },
+  "changchun-risk": {
+    intent: "评估这个开挖工程是否影响城市生命线资产，并给出处置建议。",
+    tool: "changchun_excavation_risk.assess_excavation_risk",
+    value: "智能体 Agent 只提交工程参数和区域，风险动作在长春 Runtime 内部使用坐标、规则和监测摘要。",
+    boundary: "精确坐标和权属详情不出域；外部只得到风险等级、影响类型、建议和凭证。",
+  },
+  "ontology-ops": {
+    intent: "把管线精确坐标升级为核心数据，并重新编译受影响的数据产品。",
+    tool: "ontology_ops.recompile_product_projection",
+    value: "智能体 Agent / 运维台先看全量本体，再识别受影响产品投影，最后触发 OSDK 重新编译。",
+    boundary: "本体可以很大，但每个产品只拿被治理规则允许的安全投影。",
+  },
+};
+
+const agentValue = [
+  ["发现", "读取产品目录和 OSDK/MCP 描述，知道有哪些可信数据产品可调用。"],
+  ["授权", "按用途、数据域、调用方和期限申请 entitlement，不绕过 Policy。"],
+  ["编排", "跨 Provider 调用同一产品动作，但不接触连接串、SQL 或原始文件。"],
+  ["适配", "本体分类变化后重新读取新 OSDK，自动避开已收缩的接口。"],
+  ["验证", "拿到结果后验证 receipt，说明授权、应用、本体、产品、Runtime 和输入输出 hash。"],
+];
+
+const fullOntologyNodes = [
+  { id: "SourceDataset", group: "治理底座", products: ["power-credit", "changchun-risk"] },
+  { id: "SourceField", group: "治理底座", products: ["power-credit", "changchun-risk"] },
+  { id: "Enterprise", group: "企业用电征信", products: ["power-credit"] },
+  { id: "EnergyUsage", group: "企业用电征信", products: ["power-credit"] },
+  { id: "BillingRecord", group: "企业用电征信", products: ["power-credit"] },
+  { id: "CreditResult", group: "企业用电征信", products: ["power-credit"] },
+  { id: "PipelineSegment", group: "长春生命线", products: ["changchun-risk"] },
+  { id: "ExcavationProject", group: "长春生命线", products: ["changchun-risk"] },
+  { id: "RiskAssessment", group: "长春生命线", products: ["changchun-risk"] },
+  { id: "MonitoringSignal", group: "长春生命线", products: ["changchun-risk"] },
+  { id: "HazardEvent", group: "长春生命线", products: ["changchun-risk"] },
+  { id: "ProductProjection", group: "产品编译", products: ["power-credit", "changchun-risk"] },
+  { id: "RuntimeBinding", group: "产品编译", products: ["power-credit", "changchun-risk"] },
+  { id: "ApplicationManifest", group: "智能体执行", products: ["power-credit", "changchun-risk"] },
+  { id: "Entitlement", group: "智能体执行", products: ["power-credit", "changchun-risk"] },
+  { id: "ExecutionReceipt", group: "智能体执行", products: ["power-credit", "changchun-risk"] },
+];
+
+const productProjectionCards = [
+  {
+    id: "power-credit",
+    title: "企业用电征信产品投影",
+    action: "compute_credit_features",
+    objects: ["Enterprise", "EnergyUsage", "BillingRecord", "CreditResult"],
+    output: "征信评分、风险等级、稳定性、逾期区间、质量摘要、凭证",
+  },
+  {
+    id: "changchun-risk",
+    title: "长春开挖风险产品投影",
+    action: "assess_excavation_risk",
+    objects: ["ExcavationProject", "PipelineSegment", "RiskAssessment"],
+    output: "风险等级、影响资产类型、影响段数、处置建议、质量摘要、凭证",
+  },
+];
+
 async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -201,6 +274,63 @@ function TabNav({ activeTab, setActiveTab }) {
   );
 }
 
+function NarrativeStrip({ activeTab, selectedEnterpriseId, changchunForm }) {
+  const story = scenarioStory[activeTab];
+  const subject =
+    activeTab === "power-credit"
+      ? selectedEnterpriseId
+      : activeTab === "changchun-risk"
+        ? changchunForm.project_id
+        : "PipelineSegment.exact_coordinates";
+  return (
+    <section className="narrative-strip">
+      <div>
+        <span>用户意图</span>
+        <strong>{story.intent}</strong>
+        <small>当前对象：{subject}</small>
+      </div>
+      <div>
+        <span>智能体 Agent 决策</span>
+        <strong>{story.tool}</strong>
+        <small>{story.value}</small>
+      </div>
+      <div>
+        <span>可信边界</span>
+        <strong>OSDK 只暴露产品动作</strong>
+        <small>{story.boundary}</small>
+      </div>
+    </section>
+  );
+}
+
+function AgentIntentCard({ activeTab, subject }) {
+  const story = scenarioStory[activeTab];
+  return (
+    <div className="agent-intent">
+      <div className="agent-intent-title">
+        <Bot size={16} />
+        <strong>智能体 Agent 执行视角</strong>
+      </div>
+      <div className="agent-intent-grid">
+        <div>
+          <span>自然语言目标</span>
+          <p>{story.intent}</p>
+        </div>
+        <div>
+          <span>选择的 OSDK / MCP Tool</span>
+          <code>
+            {story.tool}({JSON.stringify({ subject })})
+          </code>
+        </div>
+        <div>
+          <span>为什么不是直接查表</span>
+          <p>{story.boundary}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PowerWorkbench({
   enterprises,
   selectedEnterpriseId,
@@ -233,6 +363,7 @@ function PowerWorkbench({
       <div className="note">
         前端只选择企业并提交产品动作。底层的电量、缴费字段由 Runtime 在数据域内通过动态本体映射读取。
       </div>
+      <AgentIntentCard activeTab="power-credit" subject={selectedEnterpriseId} />
       {result?.aggregated_credit_score && (
         <ResultGrid
           items={[
@@ -289,6 +420,7 @@ function ChangchunWorkbench({ form, setForm, run, result, busy }) {
       <div className="note">
         前端提交区域和施工参数；管线精确坐标、拓扑和监测摘要只在长春 Runtime 内部用于计算。
       </div>
+      <AgentIntentCard activeTab="changchun-risk" subject={form.project_id} />
       {result?.result && (
         <ResultGrid
           items={[
@@ -330,6 +462,10 @@ function OpsWorkbench({ run, result, busy, coordinateCore }) {
           ["影响对象", "PipelineSegment"],
         ]}
       />
+      <AgentIntentCard
+        activeTab="ontology-ops"
+        subject="PipelineSegment.exact_coordinates"
+      />
     </div>
   );
 }
@@ -347,7 +483,15 @@ function ResultGrid({ items }) {
   );
 }
 
-function OntologyPanel({ productPackage }) {
+function OntologyPanel({ productPackage, activeTab, allPackages, coordinateCore }) {
+  if (activeTab === "ontology-ops") {
+    return (
+      <OntologyOpsCompilerView
+        allPackages={allPackages}
+        coordinateCore={coordinateCore}
+      />
+    );
+  }
   const ontology = productPackage?.ontology_model;
   const objects = Object.entries(ontology?.object_types || {});
   const links = Object.entries(ontology?.link_types || {});
@@ -386,6 +530,119 @@ function OntologyPanel({ productPackage }) {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function OntologyOpsCompilerView({ allPackages, coordinateCore }) {
+  const activeProjection = coordinateCore ? "changchun-risk" : "changchun-risk";
+  const compileRows = [
+    [
+      "PipelineSegment.exact_coordinates",
+      coordinateCore ? "COMPUTE_ONLY" : "INTERNAL_ONLY",
+      coordinateCore
+        ? "不生成读取接口；仅 assess_excavation_risk 可在 Runtime 内部使用"
+        : "治理内部可见；升级后会触发接口收缩",
+    ],
+    ["PipelineSegment.owner_detail", "HIDDEN", "完全不进入 OSDK，不允许输出"],
+    ["RiskAssessment.overall_risk", "EXTERNAL_RESULT", "进入结果模型，可返回给调用方"],
+    ["EnergyUsage.kwh", "COMPUTE_ONLY", "只用于用电征信本地计算，不返回明细"],
+    ["EnergyUsage.raw_monthly_kwh", "HIDDEN", "原始用电序列被裁掉，不生成接口"],
+    ["ExecutionReceipt.output_hash", "EXTERNAL_RESULT", "作为凭证校验材料返回"],
+  ];
+  const packageCount = Object.keys(allPackages || {}).length;
+  return (
+    <div className="ops-compiler-view">
+      <div className="ontology-summary">
+        <strong>动态本体不是一个产品接口，而是产品编译的语义原料库</strong>
+        <span>
+          当前 Registry 中有 {packageCount} 个产品包。运维页展示全量语义资产，然后说明每个产品只会编译出一部分安全 OSDK。
+        </span>
+      </div>
+
+      <div className="compiler-stage">
+        <div className="compiler-stage-title">
+          <Boxes size={16} />
+          <strong>1. 全量动态本体</strong>
+          <span>跨场景、跨治理对象统一登记；未进入当前产品的对象不会出现在该产品 OSDK 中。</span>
+        </div>
+        <div className="full-ontology-grid">
+          {fullOntologyNodes.map((node) => (
+            <div
+              className={`ontology-chip ${
+                node.products.includes(activeProjection) ? "selected" : ""
+              }`}
+              key={node.id}
+            >
+              <NameWithCode label={objectText[node.id] || node.id} code={node.id} />
+              <small>{node.group}</small>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="compiler-stage">
+        <div className="compiler-stage-title">
+          <GitBranch size={16} />
+          <strong>2. 产品投影</strong>
+          <span>产品投影从全量本体里选对象、动作和输出，再交给分类分级规则裁剪。</span>
+        </div>
+        <div className="projection-grid">
+          {productProjectionCards.map((projection) => (
+            <div
+              className={`projection-card ${
+                projection.id === activeProjection ? "active" : ""
+              }`}
+              key={projection.id}
+            >
+              <strong>{projection.title}</strong>
+              <code>{projection.action}</code>
+              <div className="projection-objects">
+                {projection.objects.map((objectName) => (
+                  <span key={objectName}>{objectText[objectName] || objectName}</span>
+                ))}
+              </div>
+              <small>{projection.output}</small>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="compiler-stage">
+        <div className="compiler-stage-title">
+          <PackageCheck size={16} />
+          <strong>3. 编译裁剪结果</strong>
+          <span>同一个本体字段会因为分类分级不同，被编译成可输出、仅计算、仅治理或完全隐藏。</span>
+        </div>
+        <table className="compile-table">
+          <thead>
+            <tr>
+              <th>本体字段</th>
+              <th>分类分级</th>
+              <th>编译到 OSDK 的结果</th>
+            </tr>
+          </thead>
+          <tbody>
+            {compileRows.map(([field, exposure, result]) => (
+              <tr key={field}>
+                <td>{field}</td>
+                <td>
+                  <span className={`exposure exposure-${exposure}`}>{exposure}</span>
+                </td>
+                <td>{result}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="compile-diff">
+          <strong>{coordinateCore ? "已重新编译" : "待演示重新编译"}</strong>
+          <span>
+            {coordinateCore
+              ? "坐标读取接口被移除，但风险评估动作保留；智能体 Agent 重新读取 OSDK 后只能调用受控动作。"
+              : "点击重新编译后，坐标字段会从可治理查看变成仅 Runtime 内部计算，OSDK 接口随之收缩。"}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -560,6 +817,8 @@ function TaskPanel({ activeTab, task, latestResult, productPackage, cleared, onC
         </>
       )}
 
+      <AgentValuePanel />
+
       <div className="osdk-compact">
         <div className="mini-title">
           <Code2 size={15} />
@@ -568,6 +827,25 @@ function TaskPanel({ activeTab, task, latestResult, productPackage, cleared, onC
         <pre>{productPackage?.python_osdk || "waiting for product package"}</pre>
       </div>
     </aside>
+  );
+}
+
+function AgentValuePanel() {
+  return (
+    <div className="agent-value-panel">
+      <div className="mini-title">
+        <Bot size={15} />
+        智能体 Agent 价值闭环
+      </div>
+      <div className="agent-value-list">
+        {agentValue.map(([label, description]) => (
+          <div key={label}>
+            <strong>{label}</strong>
+            <span>{description}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -785,11 +1063,12 @@ function App() {
     runWithTimeline(
       "power-credit",
       [
-        { title: "读取前端企业选择", detail: selectedEnterpriseId },
-        { title: "签发两个 Provider 授权", detail: "grid + integrated-energy" },
-        { title: "生成并调用 Product OSDK", detail: "compute_credit_features" },
-        { title: "Provider 本地映射底层表", detail: "monthly_usage / billing" },
-        { title: "返回受控征信结果和凭证", detail: "raw rows blocked" },
+        { title: "智能体 Agent 接收业务意图", detail: selectedEnterpriseId },
+        { title: "智能体 Agent 读取产品目录", detail: "选择 enterprise-energy-credit" },
+        { title: "按用途签发两个授权", detail: "grid + integrated-energy" },
+        { title: "智能体 Agent 调用 Product OSDK", detail: "compute_credit_features" },
+        { title: "Provider 本地映射和计算", detail: "raw rows stay local" },
+        { title: "智能体 Agent 汇总摘要并验证凭证", detail: "receipt hash + signature" },
       ],
       () =>
         api("/demo/run/power-credit", {
@@ -803,11 +1082,12 @@ function App() {
     runWithTimeline(
       "changchun-risk",
       [
-        { title: "提交开挖风险参数", detail: changchunForm.project_id },
-        { title: "签发施工安全用途授权", detail: "construction_safety_assessment" },
-        { title: "调用风险评估 OSDK", detail: "assess_excavation_risk" },
-        { title: "Runtime 本地执行空间规则", detail: "GIS geometry stays local" },
-        { title: "返回风险摘要和凭证", detail: "coordinates blocked" },
+        { title: "智能体 Agent 接收施工安全意图", detail: changchunForm.project_id },
+        { title: "智能体 Agent 读取风险产品投影", detail: "changchun-excavation-risk" },
+        { title: "按施工安全用途授权", detail: "construction_safety_assessment" },
+        { title: "智能体 Agent 调用风险评估 OSDK", detail: "assess_excavation_risk" },
+        { title: "Runtime 内部使用坐标计算", detail: "geometry stays local" },
+        { title: "智能体 Agent 返回风险摘要和凭证", detail: "coordinates blocked" },
       ],
       () =>
         api("/demo/run/changchun", {
@@ -825,10 +1105,11 @@ function App() {
     runWithTimeline(
       "ontology-ops",
       [
-        { title: "选择核心数据字段", detail: "PipelineSegment.exact_coordinates" },
-        { title: "更新 DOIR 分类分级", detail: "COMPUTE_ONLY" },
-        { title: "重新编译产品投影", detail: "changchun-excavation-risk@1.1.0" },
-        { title: "生成新 OSDK 合同", detail: "read interface shrinks, action remains" },
+        { title: "智能体 Agent / 运维台读取全量本体", detail: "跨场景语义资产" },
+        { title: "定位受影响产品投影", detail: "changchun-excavation-risk" },
+        { title: "更新字段分类分级", detail: "exact_coordinates -> COMPUTE_ONLY" },
+        { title: "Product Compiler 重新裁剪", detail: "只编译安全投影" },
+        { title: "发布新 OSDK 合同", detail: "read interface shrinks, action remains" },
       ],
       () => api("/demo/recompile-coordinate-core", { method: "POST" }),
     );
@@ -861,6 +1142,11 @@ function App() {
       </div>
 
       <TabNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      <NarrativeStrip
+        activeTab={activeTab}
+        selectedEnterpriseId={selectedEnterpriseId}
+        changchunForm={changchunForm}
+      />
 
       <div className="workspace">
         <div className="workspace-left">
@@ -895,7 +1181,12 @@ function App() {
           </Section>
 
           <Section title="动态本体结构和内容" icon={BookOpen}>
-            <OntologyPanel productPackage={activePackage} />
+            <OntologyPanel
+              productPackage={activePackage}
+              activeTab={activeTab}
+              allPackages={state?.product_packages}
+              coordinateCore={Boolean(state?.coordinate_core)}
+            />
           </Section>
 
           <Section title="底层数据表" icon={Database}>
