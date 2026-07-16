@@ -26,6 +26,7 @@
 - `scenarios/`：企业用电征信与长春开挖风险的映射、产品和应用 manifest。
 - `docs/`：Demo 合同、数据字典、验收清单和演示脚本。
 - `docs/project-status-and-osdk.md`：项目现状说明，重点解释当前 OSDK 的真实实现程度、能力边界和后续演进方向。
+- `docs/demo-architecture-implementation-guide.md`：演示说明、架构说明和未来实施技术门槛评估的融合文档。
 
 ## 本地运行
 
