@@ -258,11 +258,107 @@ def render_framework_structure() -> None:
     img.save(OUT_DIR / "framework-structure.png")
 
 
+def render_upstream_skill_boundary() -> None:
+    img = Image.new("RGB", (1900, 1260), "white")
+    draw = ImageDraw.Draw(img)
+    draw.text((42, 30), "上游动态本体平台、Agent Skill 与 OSDK 产品层分工", font=font(40), fill=INK)
+    draw.text(
+        (42, 86),
+        "OntoFlow 或其他动态本体平台负责内部生产，我们把可对外服务的能力编译成受控 Product OSDK，并由 awiki.ai Agent 网络协作运营。",
+        font=font(23),
+        fill=MUTED,
+    )
+    legend_y = 124
+    legend_items = [("内部生产流", TEAL), ("Agent skill 调用", BLUE), ("产品编译输入", ORANGE)]
+    legend_x = 42
+    for label, color in legend_items:
+        draw.line((legend_x, legend_y + 10, legend_x + 44, legend_y + 10), fill=color, width=5)
+        draw.polygon([(legend_x + 44, legend_y + 10), (legend_x + 34, legend_y + 4), (legend_x + 34, legend_y + 16)], fill=color)
+        draw.text((legend_x + 58, legend_y), label, font=font(18), fill=MUTED)
+        legend_x += 210
+
+    col_y = 172
+    col_h = 840
+    col_w = 540
+    gap = 65
+    columns = [
+        ((42, col_y, 42 + col_w, col_y + col_h), "数据提供方内部生产域", TEAL, TEAL_BOX),
+        ((42 + col_w + gap, col_y, 42 + col_w * 2 + gap, col_y + col_h), "awiki.ai Agent 网络", BLUE, BOX),
+        ((42 + col_w * 2 + gap * 2, col_y, 42 + col_w * 3 + gap * 2, col_y + col_h), "可信数据产品层", ORANGE, ORANGE_BOX),
+    ]
+    for box, title, accent, fill in columns:
+        rounded(draw, box, fill=fill, outline=BORDER, radius=22)
+        draw.text((box[0] + 28, box[1] + 24), title, font=font(30), fill=accent)
+
+    def inner_card(box, offset_y, title, body, accent=TEAL, fill="white"):
+        x1, y1, x2, _ = box
+        card = (x1 + 30, y1 + offset_y, x2 - 30, y1 + offset_y + 145)
+        rounded(draw, card, fill=fill, outline=BORDER, radius=16)
+        draw.text((card[0] + 22, card[1] + 18), title, font=font(24), fill=accent)
+        draw_wrapped(draw, (card[0] + 22, card[1] + 58), body, card[2] - card[0] - 44, font(19), fill=MUTED, line_gap=7)
+        return card
+
+    provider = columns[0][0]
+    awiki = columns[1][0]
+    product = columns[2][0]
+
+    catalog = inner_card(provider, 92, "数据目录 / 湖仓 / GIS / 图数据库", "源表、文档、空间数据、图关系、规则和监测摘要。")
+    ontology = inner_card(provider, 270, "OntoFlow / 动态本体平台", "建模、映射、实例化、关系编排和内部 action。")
+    quality = inner_card(provider, 448, "质量 / 分类分级 / 血缘", "检查覆盖率、敏感级别、数据窗口和可发布条件。")
+    doir = inner_card(provider, 626, "DOIR / Product Projection", "输出中间表示和产品投影，作为 OSDK 编译输入。", accent=GREEN)
+
+    ops = inner_card(awiki, 92, "数据运营 Agent", "有受控全栈工具箱：目录、建模、质检、编译、审计。", accent=BLUE)
+    skills = inner_card(awiki, 270, "Skill Registry", "把 OntoFlow、质量检查、编译、发布、审计注册成可调用 skill。", accent=BLUE)
+    human = inner_card(awiki, 448, "人工审批 / 复核", "发布、授权、外发、生产绑定变更必须人审。", accent=RED, fill=RED_BOX)
+    notices = inner_card(awiki, 626, "异步协作通知", "审批、质检、执行、Receipt 验证通过 Agent 网络回传。", accent=BLUE)
+
+    compiler = inner_card(product, 92, "Product Compiler", "按用途、授权、分类分级和质量门槛裁剪产品接口。", accent=ORANGE)
+    osdk = inner_card(product, 270, "OSDK / MCP / OpenAPI", "只暴露命名动作，不暴露底层表、SQL、文件和连接串。", accent=GREEN, fill=GREEN_BOX)
+    gateway = inner_card(product, 448, "Gateway / Policy / Runtime", "身份、签名、路由、授权校验和数据域内执行。", accent=ORANGE)
+    receipt = inner_card(product, 626, "Receipt / Audit", "记录授权、应用、本体、产品、Runtime、输入输出 hash 和签名。", accent=RED, fill=RED_BOX)
+
+    for left, right in [
+        (catalog, ontology),
+        (ontology, quality),
+        (quality, doir),
+        (ops, skills),
+        (skills, human),
+        (human, notices),
+        (compiler, osdk),
+        (osdk, gateway),
+        (gateway, receipt),
+    ]:
+        arrow(draw, ((left[0] + left[2]) // 2, left[3] + 8), ((right[0] + right[2]) // 2, right[1] - 8), color=TEAL, width=3)
+
+    arrow(draw, (doir[2] + 16, (doir[1] + doir[3]) // 2), (compiler[0] - 16, (compiler[1] + compiler[3]) // 2), color=ORANGE, width=4)
+    arrow(draw, (skills[0] - 16, (skills[1] + skills[3]) // 2), (ontology[2] + 16, (ontology[1] + ontology[3]) // 2), color=BLUE, width=4)
+    arrow(draw, (skills[2] + 16, (skills[1] + skills[3]) // 2), (compiler[0] - 16, (compiler[1] + compiler[3]) // 2), color=BLUE, width=4)
+    arrow(draw, (notices[2] + 16, (notices[1] + notices[3]) // 2), (receipt[0] - 16, (receipt[1] + receipt[3]) // 2), color=BLUE, width=4)
+
+    callout = (42, 1060, 1858, 1204)
+    rounded(draw, callout, fill=TEAL_BOX, outline="#99d8cf", radius=18)
+    draw.text((78, 1090), "核心判断", font=font(28), fill=TEAL)
+    draw_wrapped(
+        draw,
+        (78, 1134),
+        "我们不重做所有上游平台。我们的价值在于把上游动态本体和数据平台能力，编译成可授权、可调用、可审计、可验证的数据产品，并让 Agent 网络围绕这些产品完成交易和运营。",
+        callout[2] - callout[0] - 120,
+        font(22),
+        fill=INK,
+        line_gap=8,
+    )
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    img.save(OUT_DIR / "upstream-ontology-skill-boundary.png")
+
+
 def main() -> None:
     render_agent_value()
     render_framework_structure()
+    render_upstream_skill_boundary()
     print(OUT_DIR / "agent-value-framework.png")
     print(OUT_DIR / "framework-structure.png")
+    print(OUT_DIR / "upstream-ontology-skill-boundary.png")
 
 
 if __name__ == "__main__":
