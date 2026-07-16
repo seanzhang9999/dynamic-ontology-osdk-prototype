@@ -11,6 +11,7 @@ import {
   GitBranch,
   Hammer,
   MapPinned,
+  Network,
   PackageCheck,
   RefreshCcw,
   Search,
@@ -43,6 +44,13 @@ const TABS = [
     productId: "changchun-excavation-risk",
     icon: Hammer,
     dataKey: "ontology-ops",
+  },
+  {
+    id: "deployment-view",
+    label: "部署视图",
+    productId: "enterprise-energy-credit",
+    icon: Network,
+    dataKey: "deployment",
   },
 ];
 
@@ -152,6 +160,15 @@ const columnText = {
   event_hash: "审计事件哈希",
   request_id: "请求编号",
   output_hash: "输出哈希",
+  workload_id: "工作负载编号",
+  image_digest: "镜像摘要",
+  network_policy: "网络策略",
+  attestation: "运行证明",
+  action_id: "动作编号",
+  runtime_endpoint: "Runtime 路由",
+  contract_version: "合约版本",
+  request_signature: "请求签名",
+  input_hash: "输入哈希",
 };
 
 const scenarioStory = {
@@ -173,6 +190,12 @@ const scenarioStory = {
     value: "智能体 Agent / 运维台先看全量本体，再识别受影响产品投影，最后触发 OSDK 重新编译。",
     boundary: "本体可以很大，但每个产品只拿被治理规则允许的安全投影。",
   },
+  "deployment-view": {
+    intent: "把客户 OSDK 作为独立 workload 运行，经可信数据空间网关调用受控 Runtime。",
+    tool: "GatewayRuntimeAdapter.execute_action",
+    value: "同一套 OSDK 可在客户侧运行，也可在我方沙箱运行；网络策略只允许访问可信数据空间网关。",
+    boundary: "OSDK workload 不直连数据库或 Runtime 内网；网关负责身份、合约、路由、审计和调用约束。",
+  },
 };
 
 const agentValue = [
@@ -188,8 +211,8 @@ const agentValue = [
   },
   {
     label: "编排",
-    section: "右侧执行明细",
-    problem: "展示同一命名动作如何跨 Provider 执行，同时不接触 SQL、连接串或原始文件。",
+    section: "右侧执行明细 + 部署视图",
+    problem: "展示同一命名动作如何跨 Provider / 网关执行，同时不接触 SQL、连接串或原始文件。",
   },
   {
     label: "适配",
@@ -200,6 +223,81 @@ const agentValue = [
     label: "验证",
     section: "凭证中心 / Receipt",
     problem: "说明结果不是一句话答案，而是带授权、应用、本体、产品、Runtime 和 hash 的可验证凭证。",
+  },
+];
+
+const deploymentModes = {
+  "customer-side": {
+    label: "客户侧 OSDK Workload",
+    runtime: "客户侧 Kubernetes / VM / Agent Runtime",
+    trust: "客户控制应用和 OSDK 运行环境，网络只放行到可信数据空间网关。",
+    workloadId: "customer-bank-agent",
+  },
+  "vendor-sandbox": {
+    label: "我方独立 OSDK 沙箱",
+    runtime: "我方受控沙箱 / per-customer workload",
+    trust: "客户代码或 OSDK 包在独立沙箱运行，仍必须经过可信数据空间网关调用 Runtime。",
+    workloadId: "vendor-hosted-customer-osdk",
+  },
+};
+
+const deploymentRows = [
+  {
+    table: "osdk_workload.sandbox_manifest",
+    business_object: "ApplicationManifest",
+    fields: "workload_id, image_digest, network_policy, attestation",
+    sample_rows: 2,
+    osdk_exposure: "OSDK 作为独立 workload 运行，只允许访问网关",
+    preview_rows: [
+      {
+        workload_id: "customer-bank-agent",
+        image_digest: "sha256:customer-osdk-runner",
+        network_policy: "egress:tds-gateway-only",
+        attestation: "sha256:workload-attestation",
+      },
+      {
+        workload_id: "vendor-hosted-customer-osdk",
+        image_digest: "sha256:isolated-osdk-sandbox",
+        network_policy: "egress:tds-gateway-only",
+        attestation: "sha256:sandbox-attestation",
+      },
+    ],
+  },
+  {
+    table: "tds_gateway.action_route",
+    business_object: "RuntimeBinding",
+    fields: "product_id, action_id, runtime_endpoint, contract_version",
+    sample_rows: 2,
+    osdk_exposure: "网关按产品合约路由，不暴露 Runtime 内网地址",
+    preview_rows: [
+      {
+        product_id: "enterprise-energy-credit",
+        action_id: "compute_credit_features",
+        runtime_endpoint: "provider-runtime/power-credit",
+        contract_version: "product-contract@1.0.0",
+      },
+      {
+        product_id: "changchun-excavation-risk",
+        action_id: "assess_excavation_risk",
+        runtime_endpoint: "provider-runtime/changchun-risk",
+        contract_version: "product-contract@1.1.0",
+      },
+    ],
+  },
+  {
+    table: "tds_gateway.audit_envelope",
+    business_object: "ExecutionReceipt",
+    fields: "request_signature, entitlement_id, input_hash, output_hash",
+    sample_rows: 1,
+    osdk_exposure: "每次跨域调用都带签名请求和可验证凭证",
+    preview_rows: [
+      {
+        request_signature: "ed25519:gateway-request-signature",
+        entitlement_id: "ent_demo_gateway",
+        input_hash: "sha256:request-payload",
+        output_hash: "sha256:result-summary",
+      },
+    ],
   },
 ];
 
@@ -238,6 +336,106 @@ const productProjectionCards = [
     output: "风险等级、影响资产类型、影响段数、处置建议、质量摘要、凭证",
   },
 ];
+
+function deploymentCode(mode) {
+  const selected = deploymentModes[mode];
+  const sandboxLine =
+    mode === "customer-side"
+      ? "# 运行位置：客户侧 OSDK Workload"
+      : "# 运行位置：我方为客户启动的独立 OSDK 沙箱";
+  return `${sandboxLine}
+gateway_runtime = GatewayRuntimeAdapter(
+    gateway_url="https://tds-gateway.example.com",
+    workload_id="${selected.workloadId}",
+    workload_attestation="sha256:workload-attestation",
+    allowed_products=["enterprise-energy-credit"],
+)
+
+client = EnterpriseEnergyCreditClient(runtime=gateway_runtime)
+
+result = client.compute_credit_features(
+    enterprise_id="91300000DEMO0007",
+    months=12,
+    entitlement_id="ent_demo_gateway",
+)
+
+# GatewayRuntimeAdapter 实际发送的受控请求
+POST /actions/execute
+{
+  "product_id": "enterprise-energy-credit",
+  "action_id": "compute_credit_features",
+  "payload": {
+    "enterprise_id": "91300000DEMO0007",
+    "months": 12,
+    "entitlement_id": "ent_demo_gateway"
+  },
+  "workload_id": "${selected.workloadId}",
+  "request_signature": "ed25519:..."
+}`;
+}
+
+function deploymentResult(mode) {
+  const selected = deploymentModes[mode];
+  return {
+    mode,
+    status: "success",
+    result: {
+      workload: selected.label,
+      gateway: "可信数据空间网关",
+      runtime: "我方 Product Runtime",
+      boundary: "OSDK workload 不能直连数据库或 Runtime 内网",
+    },
+    trace: [
+      {
+        title: "启动独立 OSDK Workload",
+        actor: selected.runtime,
+        detail: selected.trust,
+        facts: {
+          workload_id: selected.workloadId,
+          network_policy: "egress:tds-gateway-only",
+        },
+      },
+      {
+        title: "OSDK 通过网关适配器发起调用",
+        actor: "GatewayRuntimeAdapter",
+        detail: "OSDK 仍调用同一个 Product Client，但 runtime 被替换成网关适配器。",
+        code: deploymentCode(mode),
+      },
+      {
+        title: "可信数据空间网关校验并路由",
+        actor: "Trusted Data Space Gateway",
+        detail: "网关校验 workload 身份、请求签名、产品合约、entitlement_id 和路由策略。",
+        facts: {
+          checks: [
+            "workload_attestation",
+            "request_signature",
+            "product_contract",
+            "entitlement_id",
+            "route_policy",
+          ],
+        },
+      },
+      {
+        title: "我方 Runtime 执行实际计算",
+        actor: "Product Runtime",
+        detail: "Runtime 收到受控 action_id 后，再执行 Policy 校验、本体映射、本地计算和输出过滤。",
+        facts: {
+          action_id: "compute_credit_features",
+          internal_dependencies: ["EnergyUsage.kwh", "BillingRecord.late_days"],
+        },
+      },
+      {
+        title: "返回摘要结果和凭证",
+        actor: "Audit Service + Gateway",
+        detail: "结果和 receipt 通过网关返回 OSDK workload；后续可扩展成多 Runtime 联合计算编排。",
+        facts: {
+          returned: ["CreditResult", "ExecutionReceipt"],
+          future_extension: "federated_runtime_orchestration",
+        },
+      },
+    ],
+  };
+}
 
 async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -301,7 +499,9 @@ function NarrativeStrip({ activeTab, selectedEnterpriseId, changchunForm }) {
       ? selectedEnterpriseId
       : activeTab === "changchun-risk"
         ? changchunForm.project_id
-        : "PipelineSegment.exact_coordinates";
+        : activeTab === "deployment-view"
+          ? "OSDK workload"
+          : "PipelineSegment.exact_coordinates";
   return (
     <section className="narrative-strip">
       <div>
@@ -490,6 +690,97 @@ function OpsWorkbench({ run, result, busy, coordinateCore }) {
   );
 }
 
+function DeploymentWorkbench({ mode, setMode, run, result, busy }) {
+  const selected = deploymentModes[mode];
+  return (
+    <div className="workbench">
+      <div className="deployment-mode-grid">
+        {Object.entries(deploymentModes).map(([id, item]) => (
+          <button
+            className={`deployment-mode ${mode === id ? "active" : ""}`}
+            key={id}
+            onClick={() => setMode(id)}
+            type="button"
+          >
+            <strong>{item.label}</strong>
+            <span>{item.runtime}</span>
+          </button>
+        ))}
+      </div>
+      <div className="note">
+        {selected.trust} 关键点是：客户的 OSDK 和调用逻辑变成独立 workload，之后所有 Runtime 调用都经过可信数据空间网关。
+      </div>
+      <div className="deployment-code-card">
+        <div className="data-preview-title">
+          <strong>实际代码演示</strong>
+          <span>{selected.label}</span>
+        </div>
+        <pre>{deploymentCode(mode)}</pre>
+      </div>
+      <button onClick={run} disabled={busy}>
+        <Network size={17} />
+        模拟网关调用
+      </button>
+      {result?.result && (
+        <ResultGrid
+          items={[
+            ["Workload", result.result.workload],
+            ["网关", result.result.gateway],
+            ["Runtime", result.result.runtime],
+            ["边界", result.result.boundary],
+          ]}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeploymentTopologyView({ mode }) {
+  const selected = deploymentModes[mode];
+  const nodes = [
+    ["客户 / Agent", "提交业务意图，调用 Product OSDK"],
+    [selected.label, selected.runtime],
+    ["可信数据空间网关", "身份、合约、签名、授权、路由、审计"],
+    ["我方 Product Runtime", "Policy、本体映射、实际计算、输出过滤"],
+    ["凭证与联合计算扩展", "Receipt 返回；后续可编排多个 Runtime"],
+  ];
+  return (
+    <div className="deployment-topology">
+      <div className="ontology-summary">
+        <strong>通用部署模型：OSDK 是独立 workload，Runtime 是受控计算端</strong>
+        <span>
+          无论 OSDK 在客户侧还是我方沙箱运行，它都只通过可信数据空间网关调用 Runtime。这个边界也为后续联邦计算、TEE、MPC 或多 Runtime 编排留下空间。
+        </span>
+      </div>
+      <div className="topology-chain">
+        {nodes.map(([title, detail], index) => (
+          <React.Fragment key={title}>
+            <div className={`topology-node ${index === 1 ? "active" : ""}`}>
+              <strong>{title}</strong>
+              <span>{detail}</span>
+            </div>
+            {index < nodes.length - 1 && <div className="topology-arrow">→</div>}
+          </React.Fragment>
+        ))}
+      </div>
+      <div className="deployment-boundary-grid">
+        <div>
+          <strong>客户侧运行</strong>
+          <p>客户保留应用和 Agent 运行控制权；OSDK workload 只允许出网到可信数据空间网关。</p>
+        </div>
+        <div>
+          <strong>我方沙箱运行</strong>
+          <p>客户 OSDK 包或调用逻辑在我方隔离沙箱运行；仍按 workload 身份经网关访问 Runtime。</p>
+        </div>
+        <div>
+          <strong>联合计算扩展</strong>
+          <p>多个 OSDK workload 或多个 Runtime 可以由网关编排，先交换摘要、凭证或隐私计算任务。</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ResultGrid({ items }) {
   return (
     <div className="result-grid">
@@ -503,7 +794,13 @@ function ResultGrid({ items }) {
   );
 }
 
-function OntologyPanel({ productPackage, activeTab, allPackages, coordinateCore }) {
+function OntologyPanel({
+  productPackage,
+  activeTab,
+  allPackages,
+  coordinateCore,
+  deploymentMode,
+}) {
   if (activeTab === "ontology-ops") {
     return (
       <OntologyOpsCompilerView
@@ -511,6 +808,9 @@ function OntologyPanel({ productPackage, activeTab, allPackages, coordinateCore 
         coordinateCore={coordinateCore}
       />
     );
+  }
+  if (activeTab === "deployment-view") {
+    return <DeploymentTopologyView mode={deploymentMode} />;
   }
   const ontology = productPackage?.ontology_model;
   const objects = Object.entries(ontology?.object_types || {});
@@ -903,6 +1203,16 @@ function tracesFor(activeTab, result) {
       },
     ];
   }
+  if (activeTab === "deployment-view" && result.trace) {
+    return [
+      {
+        id: "deployment-view",
+        title: result.result?.workload || "OSDK Workload",
+        status: result.status || "success",
+        trace: result.trace,
+      },
+    ];
+  }
   return [];
 }
 
@@ -991,6 +1301,7 @@ function App() {
     excavation_depth: "3.5",
     construction_method: "MECHANICAL",
   });
+  const [deploymentMode, setDeploymentMode] = useState("customer-side");
   const [latestByTab, setLatestByTab] = useState({});
   const [liveTaskByTab, setLiveTaskByTab] = useState({});
   const [taskPanelClearedByTab, setTaskPanelClearedByTab] = useState({});
@@ -1081,7 +1392,10 @@ function App() {
 
   const isBusy = liveTask?.status === "running";
   const enterpriseOptions = state?.enterprise_options || [];
-  const sourceRows = state?.source_tables?.[activeConfig.dataKey] || [];
+  const sourceRows =
+    activeTab === "deployment-view"
+      ? deploymentRows
+      : state?.source_tables?.[activeConfig.dataKey] || [];
 
   function runPower() {
     runWithTimeline(
@@ -1136,6 +1450,21 @@ function App() {
         { title: "发布新 OSDK 合同", detail: "read interface shrinks, action remains" },
       ],
       () => api("/demo/recompile-coordinate-core", { method: "POST" }),
+    );
+  }
+
+  function runDeployment() {
+    runWithTimeline(
+      "deployment-view",
+      [
+        { title: "启动 OSDK 独立 Workload", detail: deploymentModes[deploymentMode].label },
+        { title: "加载客户 Product OSDK", detail: "EnterpriseEnergyCreditClient" },
+        { title: "通过可信数据空间网关发起调用", detail: "GatewayRuntimeAdapter" },
+        { title: "网关校验身份、合约和授权", detail: "signature + entitlement + route policy" },
+        { title: "我方 Runtime 执行受控计算", detail: "policy + ontology binding + compute" },
+        { title: "返回摘要结果和凭证", detail: "CreditResult + ExecutionReceipt" },
+      ],
+      () => Promise.resolve(deploymentResult(deploymentMode)),
     );
   }
 
@@ -1204,18 +1533,38 @@ function App() {
                 coordinateCore={Boolean(state?.coordinate_core)}
               />
             )}
+            {activeTab === "deployment-view" && (
+              <DeploymentWorkbench
+                mode={deploymentMode}
+                setMode={setDeploymentMode}
+                run={runDeployment}
+                result={latestByTab["deployment-view"]}
+                busy={isBusy}
+              />
+            )}
           </Section>
 
-          <Section title="动态本体结构和内容" icon={BookOpen}>
+          <Section
+            title={
+              activeTab === "deployment-view"
+                ? "部署拓扑和信任边界"
+                : "动态本体结构和内容"
+            }
+            icon={activeTab === "deployment-view" ? Network : BookOpen}
+          >
             <OntologyPanel
               productPackage={activePackage}
               activeTab={activeTab}
               allPackages={state?.product_packages}
               coordinateCore={Boolean(state?.coordinate_core)}
+              deploymentMode={deploymentMode}
             />
           </Section>
 
-          <Section title="底层数据表" icon={Database}>
+          <Section
+            title={activeTab === "deployment-view" ? "网关合约和传输数据" : "底层数据表"}
+            icon={Database}
+          >
             <DataTables rows={sourceRows} />
           </Section>
         </div>

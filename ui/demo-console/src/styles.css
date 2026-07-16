@@ -351,6 +351,115 @@ h2 {
   margin: 4px 0 0;
 }
 
+.deployment-mode-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.deployment-mode {
+  align-items: flex-start;
+  background: #fff;
+  border-color: #cbd5e1;
+  color: #1e293b;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  min-height: 82px;
+  text-align: left;
+}
+
+.deployment-mode.active {
+  background: #ecfdf5;
+  border-color: #0f766e;
+  box-shadow: inset 4px 0 0 #0f766e;
+}
+
+.deployment-mode span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.deployment-code-card {
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.deployment-code-card pre {
+  background: #020617;
+  color: #e2e8f0;
+  overflow-x: auto;
+  padding: 12px;
+}
+
+.deployment-topology {
+  display: grid;
+  gap: 12px;
+}
+
+.topology-chain {
+  align-items: stretch;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr) 24px minmax(0, 1fr) 24px minmax(0, 1fr) 24px minmax(0, 1fr);
+}
+
+.topology-node {
+  background: #f8fafc;
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.topology-node.active {
+  background: #ecfdf5;
+  border-color: #0f766e;
+}
+
+.topology-node strong {
+  color: #1e293b;
+}
+
+.topology-node span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.topology-arrow {
+  align-items: center;
+  color: #0f766e;
+  display: flex;
+  font-weight: 900;
+  justify-content: center;
+}
+
+.deployment-boundary-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.deployment-boundary-grid div {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.deployment-boundary-grid strong {
+  color: #0f766e;
+}
+
+.deployment-boundary-grid p {
+  color: #475569;
+  margin: 4px 0 0;
+}
+
 .ontology-panel {
   display: grid;
   gap: 12px;
@@ -1128,10 +1237,20 @@ pre {
   .workspace,
   .result-grid,
   .agent-intent-grid,
+  .deployment-mode-grid,
+  .deployment-boundary-grid,
   .object-list,
   .full-ontology-grid,
   .projection-grid {
     grid-template-columns: 1fr;
+  }
+
+  .topology-chain {
+    grid-template-columns: 1fr;
+  }
+
+  .topology-arrow {
+    transform: rotate(90deg);
   }
 
   .workspace-right {
