@@ -54,6 +54,7 @@ class EntitlementStore:
         requester_agent: str,
         provider_id: str,
         output_granularity: str,
+        consume: bool = True,
     ) -> PolicyDecision:
         entitlement = self.get(entitlement_id)
         if not entitlement:
@@ -86,7 +87,8 @@ class EntitlementStore:
                     entitlement_id=entitlement.entitlement_id,
                     output_granularity=entitlement.output_granularity,
                 )
-        entitlement.used_calls += 1
+        if consume:
+            entitlement.used_calls += 1
         return PolicyDecision(
             allowed=True,
             reason="allowed",

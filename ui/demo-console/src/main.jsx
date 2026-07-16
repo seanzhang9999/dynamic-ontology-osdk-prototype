@@ -344,33 +344,38 @@ function deploymentCode(mode) {
       ? "# 运行位置：客户侧 OSDK Workload"
       : "# 运行位置：我方为客户启动的独立 OSDK 沙箱";
   return `${sandboxLine}
-gateway_runtime = GatewayRuntimeAdapter(
-    gateway_url="https://tds-gateway.example.com",
-    workload_id="${selected.workloadId}",
-    workload_attestation="sha256:workload-attestation",
-    allowed_products=["enterprise-energy-credit"],
+from enterprise_energy_credit import EnterpriseEnergyCreditClient, ProviderRuntimeClient
+
+runtime = ProviderRuntimeClient(
+    base_url="http://127.0.0.1:8000",
+    api_key="demo_key_bank_agent",
+    requester_agent="agent:bank-risk",
 )
 
-client = EnterpriseEnergyCreditClient(runtime=gateway_runtime)
+client = EnterpriseEnergyCreditClient(runtime=runtime)
 
 result = client.compute_credit_features(
+    provider_id="grid",
     enterprise_id="91300000DEMO0007",
     months=12,
-    entitlement_id="ent_demo_gateway",
+    entitlement_id="<Policy 签发的授权编号>",
 )
 
-# GatewayRuntimeAdapter 实际发送的受控请求
+# ProviderRuntimeClient 实际发送的受控请求
 POST /actions/execute
 {
+  "requester_agent": "agent:bank-risk",
+  "provider_id": "grid",
   "product_id": "enterprise-energy-credit",
+  "product_version": "enterprise-energy-credit@1.0.0",
   "action_id": "compute_credit_features",
+  "entitlement_id": "<Policy 签发的授权编号>",
   "payload": {
     "enterprise_id": "91300000DEMO0007",
-    "months": 12,
-    "entitlement_id": "ent_demo_gateway"
+    "months": 12
   },
   "workload_id": "${selected.workloadId}",
-  "request_signature": "ed25519:..."
+  "transport": "remote-osdk-to-gateway"
 }`;
 }
 
@@ -724,10 +729,10 @@ function DeploymentWorkbench({ mode, setMode, run, result, busy }) {
       {result?.result && (
         <ResultGrid
           items={[
-            ["Workload", result.result.workload],
-            ["网关", result.result.gateway],
-            ["Runtime", result.result.runtime],
-            ["边界", result.result.boundary],
+            ["Workload", selected.label],
+            ["网关状态", result.status],
+            ["征信评分", result.result.credit_score],
+            ["Receipt", result.receipt_id],
           ]}
         />
       )}
@@ -1206,11 +1211,21 @@ function tracesFor(activeTab, result) {
   if (activeTab === "deployment-view" && result.trace) {
     return [
       {
-        id: "deployment-view",
-        title: result.result?.workload || "OSDK Workload",
+        id: "deployment-gateway",
+        title: "远程 OSDK -> Simple Trusted Gateway",
         status: result.status || "success",
         trace: result.trace,
       },
+      ...(result.runtime_trace
+        ? [
+            {
+              id: "deployment-runtime",
+              title: "Gateway -> Provider Runtime",
+              status: result.status || "success",
+              trace: result.runtime_trace,
+            },
+          ]
+        : []),
     ];
   }
   return [];
@@ -1459,12 +1474,20 @@ function App() {
       [
         { title: "启动 OSDK 独立 Workload", detail: deploymentModes[deploymentMode].label },
         { title: "加载客户 Product OSDK", detail: "EnterpriseEnergyCreditClient" },
-        { title: "通过可信数据空间网关发起调用", detail: "GatewayRuntimeAdapter" },
+        { title: "通过可信数据空间网关发起调用", detail: "ProviderRuntimeClient -> /actions/execute" },
         { title: "网关校验身份、合约和授权", detail: "signature + entitlement + route policy" },
         { title: "我方 Runtime 执行受控计算", detail: "policy + ontology binding + compute" },
         { title: "返回摘要结果和凭证", detail: "CreditResult + ExecutionReceipt" },
       ],
-      () => Promise.resolve(deploymentResult(deploymentMode)),
+      () =>
+        api("/demo/run/remote-power-credit", {
+          method: "POST",
+          body: JSON.stringify({
+            enterprise_id: selectedEnterpriseId,
+            provider_id: "grid",
+            months: 12,
+          }),
+        }),
     );
   }
 

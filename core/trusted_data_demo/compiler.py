@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .fixtures import build_changchun_doir, build_power_doir, product_definitions
 from .models import ExposureLevel, OUTPUT_EXPOSURES, ProductPackage, READABLE_EXPOSURES
+from .osdk_generator import (
+    action_input_schema,
+    generate_python_sdk_files,
+    python_osdk_preview,
+    write_python_sdk_package,
+)
+from .registry import DOIRRegistryLite, RegistryError
 
 
 class CompileError(ValueError):
@@ -83,66 +90,22 @@ def _ontology_model(doir: Dict[str, Any], product: Dict[str, Any]) -> Dict[str, 
     }
 
 
-def _python_osdk(product: Dict[str, Any]) -> str:
-    class_name = "".join(part.title() for part in product["id"].split("-")) + "Client"
-    if product["id"] == "enterprise-energy-credit":
-        return (
-            f"class {class_name}:\n"
-            f"    def __init__(self, runtime):\n"
-            f"        self.runtime = runtime\n\n"
-            f"    def compute_credit_features(self, *, enterprise_id: str, months: int = 12, entitlement_id: str):\n"
-            f"        payload = {{\n"
-            f"            \"enterprise_id\": enterprise_id,\n"
-            f"            \"months\": months,\n"
-            f"            \"entitlement_id\": entitlement_id,\n"
-            f"        }}\n"
-            f"        return self.runtime.execute_action(\n"
-            f"            product_id=\"enterprise-energy-credit\",\n"
-            f"            action_id=\"compute_credit_features\",\n"
-            f"            payload=payload,\n"
-            f"        )\n"
-        )
-    if product["id"] == "changchun-excavation-risk":
-        return (
-            f"class {class_name}:\n"
-            f"    def __init__(self, runtime):\n"
-            f"        self.runtime = runtime\n\n"
-            f"    def assess_excavation_risk(\n"
-            f"        self,\n"
-            f"        *,\n"
-            f"        project_id: str,\n"
-            f"        excavation_area: dict,\n"
-            f"        excavation_depth: float,\n"
-            f"        construction_method: str,\n"
-            f"        entitlement_id: str,\n"
-            f"    ):\n"
-            f"        payload = {{\n"
-            f"            \"project_id\": project_id,\n"
-            f"            \"excavation_area\": excavation_area,\n"
-            f"            \"excavation_depth\": excavation_depth,\n"
-            f"            \"construction_method\": construction_method,\n"
-            f"            \"entitlement_id\": entitlement_id,\n"
-            f"        }}\n"
-            f"        return self.runtime.execute_action(\n"
-            f"            product_id=\"changchun-excavation-risk\",\n"
-            f"            action_id=\"assess_excavation_risk\",\n"
-            f"            payload=payload,\n"
-            f"        )\n"
-        )
-    actions = "\n".join(
-        f"    def {action}(self, **payload):\n"
-        f"        return self.runtime.execute_action('{product['id']}', '{action}', payload)\n"
-        for action in product["actions"]
-    )
-    return (
-        f"class {class_name}:\n"
-        f"    def __init__(self, runtime):\n"
-        f"        self.runtime = runtime\n\n"
-        f"{actions}"
-    )
+def _action_schemas(doir: Dict[str, Any], product: Dict[str, Any]) -> Dict[str, Any]:
+    schemas: Dict[str, Any] = {}
+    for action_id in product["actions"]:
+        try:
+            action = dict(doir.get("action_types", {})[action_id])
+        except KeyError as exc:
+            raise CompileError(f"Unknown product action in DOIR: {action_id}") from exc
+        if "inputs" not in action:
+            raise CompileError(f"Action {action_id} must define inputs for dynamic OSDK generation")
+        schemas[action_id] = action
+    return schemas
 
 
-def _mcp_tools(product: Dict[str, Any], schema: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _mcp_tools(
+    product: Dict[str, Any], schema: Dict[str, Any], action_schemas: Dict[str, Any]
+) -> List[Dict[str, Any]]:
     tools = [
         {
             "name": f"describe_{product['id'].replace('-', '_')}",
@@ -163,11 +126,14 @@ def _mcp_tools(product: Dict[str, Any], schema: Dict[str, Any]) -> List[Dict[str
         },
     ]
     for action in product["actions"]:
+        action_schema = action_schemas[action]
         tools.append(
             {
                 "name": action,
-                "description": f"Execute {action} through Provider Runtime",
-                "input_schema": {"type": "object", "properties": {}},
+                "description": action_schema.get(
+                    "description", f"Execute {action} through Provider Runtime"
+                ),
+                "input_schema": action_input_schema(action_schema),
                 "output_schema": schema,
             }
         )
@@ -179,24 +145,16 @@ def compile_product(
     *,
     coordinate_core: bool = False,
     extra_outputs: Optional[List[str]] = None,
+    registry: Optional[DOIRRegistryLite] = None,
 ) -> ProductPackage:
-    products = product_definitions()
-    if product_id not in products:
+    registry = registry or DOIRRegistryLite.seeded(coordinate_core=coordinate_core)
+    try:
+        product = dict(registry.get_product(product_id))
+    except RegistryError as exc:
         raise CompileError(f"Unknown product: {product_id}")
-
-    product = dict(products[product_id])
+    doir = registry.get_doir(product_id)
     if extra_outputs:
         product["outputs"] = product["outputs"] + extra_outputs
-
-    if product_id == "enterprise-energy-credit":
-        doir = build_power_doir()
-    elif product_id == "changchun-excavation-risk":
-        doir = build_changchun_doir(coordinate_core=coordinate_core)
-        if coordinate_core:
-            product["version"] = "1.1.0"
-            product["ontology_version"] = "changchun-excavation-risk@1.1.0"
-    else:
-        raise CompileError(f"No DOIR fixture for product: {product_id}")
 
     for forbidden in product["forbidden_outputs"]:
         if forbidden in product["outputs"]:
@@ -207,8 +165,11 @@ def compile_product(
 
     schema = _output_schema(doir, product["outputs"])
     readable_fields = _readable_fields(doir)
-    mcp_tools = _mcp_tools(product, schema)
+    action_schemas = _action_schemas(doir, product)
+    mcp_tools = _mcp_tools(product, schema, action_schemas)
     product_version = f"{product['id']}@{product['version']}"
+    sdk_files = generate_python_sdk_files(product, action_schemas, schema)
+    python_osdk = python_osdk_preview(product, action_schemas, schema)
 
     product_manifest = {
         "id": product["id"],
@@ -227,6 +188,7 @@ def compile_product(
         "product_version": product_version,
         "runtime_methods": product["actions"],
         "internal_dependencies": doir.get("action_types", {}),
+        "provider_mappings": registry.list_provider_mappings(),
     }
     quality_certificate = {
         "product_id": product["id"],
@@ -244,30 +206,51 @@ def compile_product(
         "openapi": "3.1.0",
         "info": {"title": product["id"], "version": product["version"]},
         "paths": {
-            f"/jobs/execute/{action}": {"post": {"responses": {"200": {"description": "OK"}}}}
+            f"/actions/execute/{action}": {
+                "post": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {"schema": action_input_schema(action_schemas[action])}
+                        }
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
             for action in product["actions"]
         },
     }
-    return ProductPackage(
+    package = ProductPackage(
         product_manifest=product_manifest,
         ontology_model=_ontology_model(doir, product),
         product_schema=schema,
+        action_schemas=action_schemas,
         runtime_binding=runtime_binding,
         quality_certificate=quality_certificate,
         compatibility_report=compatibility_report,
-        python_osdk=_python_osdk(product),
+        python_osdk=python_osdk,
+        sdk_files=sdk_files,
         mcp_tools=mcp_tools,
         openapi=openapi,
     )
+    registry.save_compile_artifact(
+        product_id, product_version, package.model_dump(mode="json")
+    )
+    return package
 
 
-def compile_all(coordinate_core: bool = False) -> Dict[str, Dict[str, Any]]:
+def compile_all(
+    coordinate_core: bool = False,
+    registry: Optional[DOIRRegistryLite] = None,
+) -> Dict[str, Dict[str, Any]]:
+    registry = registry or DOIRRegistryLite.seeded(coordinate_core=coordinate_core)
     return {
         "enterprise-energy-credit": compile_product(
-            "enterprise-energy-credit"
+            "enterprise-energy-credit", registry=registry
         ).model_dump(mode="json"),
         "changchun-excavation-risk": compile_product(
-            "changchun-excavation-risk", coordinate_core=coordinate_core
+            "changchun-excavation-risk",
+            coordinate_core=coordinate_core,
+            registry=registry,
         ).model_dump(mode="json"),
     }
 
@@ -275,3 +258,26 @@ def compile_all(coordinate_core: bool = False) -> Dict[str, Dict[str, Any]]:
 def package_as_json(product_id: str, coordinate_core: bool = False) -> str:
     package = compile_product(product_id, coordinate_core=coordinate_core)
     return json.dumps(package.model_dump(mode="json"), ensure_ascii=False, indent=2)
+
+
+def write_python_sdk_packages(
+    out_dir: str | Path = "generated/python",
+    *,
+    coordinate_core: bool = False,
+) -> Dict[str, str]:
+    registry = DOIRRegistryLite.seeded(coordinate_core=coordinate_core)
+    out_path = Path(out_dir)
+    written: Dict[str, str] = {}
+    for product_id in ("enterprise-energy-credit", "changchun-excavation-risk"):
+        package = compile_product(
+            product_id, coordinate_core=coordinate_core, registry=registry
+        )
+        product = package.product_manifest
+        product_for_generator = {
+            "id": product["id"],
+            "version": product["version"],
+            "purpose": product["purpose"],
+        }
+        path = write_python_sdk_package(out_path, product_for_generator, package.sdk_files)
+        written[product_id] = str(path)
+    return written

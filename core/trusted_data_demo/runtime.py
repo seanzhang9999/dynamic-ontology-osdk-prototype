@@ -4,12 +4,14 @@ from statistics import mean, pstdev
 from typing import Any, Dict, List
 from uuid import uuid4
 
+from .adapters import adapter_for
 from .audit import AuditLog, sha256_json
 from .compiler import compile_all, compile_product
 from .fixtures import PROVIDERS, make_changchun_assets, make_power_records
 from .geo import bbox_intersects, expand_bbox, line_bbox, polygon_bbox
 from .models import ApplicationManifest, ExecutionJob, PolicyDecision
 from .policy import EntitlementStore
+from .registry import DOIRRegistryLite
 
 
 DEFAULT_APP = ApplicationManifest(
@@ -39,7 +41,10 @@ class TrustedDataDemo:
         }
         self.changchun_assets = make_changchun_assets()
         self.coordinate_core = False
-        self.products = compile_all(coordinate_core=self.coordinate_core)
+        self.registry = DOIRRegistryLite.seeded(coordinate_core=self.coordinate_core)
+        self.products = compile_all(
+            coordinate_core=self.coordinate_core, registry=self.registry
+        )
         self.jobs: Dict[str, ExecutionJob] = {}
 
     def state(self) -> Dict[str, Any]:
@@ -58,6 +63,7 @@ class TrustedDataDemo:
             "coordinate_core": self.coordinate_core,
             "enterprise_options": self.enterprise_options(),
             "source_tables": self.source_tables(),
+            "registry": self.registry.state(),
         }
 
     def enterprise_options(self) -> List[Dict[str, Any]]:
@@ -86,8 +92,10 @@ class TrustedDataDemo:
             + "\n\n"
             + "# 智能体 Agent 实际调用：只传业务参数和授权句柄，不传 SQL、表名或连接串\n"
             + "# entitlement_id 是 Policy Service 签发的授权许可编号，限定用途、Provider、数据主体、期限和配额\n"
-            + "client = EnterpriseEnergyCreditClient(runtime=provider_runtime)\n"
+            + "runtime = ProviderRuntimeClient(base_url=\"http://127.0.0.1:8000\", api_key=\"demo_key_bank_agent\", requester_agent=\"agent:bank-risk\")\n"
+            + "client = EnterpriseEnergyCreditClient(runtime=runtime)\n"
             + "credit_result = client.compute_credit_features(\n"
+            + "    provider_id=\"grid\",\n"
             + f"    enterprise_id=\"{enterprise_id}\",\n"
             + f"    months={months},\n"
             + f"    entitlement_id=\"{entitlement_id}\",\n"
@@ -108,8 +116,10 @@ class TrustedDataDemo:
             + "\n\n"
             + "# 智能体 Agent 实际调用：提交工程参数和区域，坐标/管线明细留在 Runtime 内部\n"
             + "# entitlement_id 是 Policy Service 签发的授权许可编号，限定用途、Provider、工程主体、期限和配额\n"
-            + "client = ChangchunExcavationRiskClient(runtime=changchun_runtime)\n"
+            + "runtime = ProviderRuntimeClient(base_url=\"http://127.0.0.1:8000\", api_key=\"demo_key_construction_agent\", requester_agent=\"agent:construction-safety\")\n"
+            + "client = ChangchunExcavationRiskClient(runtime=runtime)\n"
             + "risk_result = client.assess_excavation_risk(\n"
+            + "    provider_id=\"changchun\",\n"
             + f"    project_id=\"{project_id}\",\n"
             + f"    excavation_depth={excavation_depth},\n"
             + f"    construction_method=\"{construction_method}\",\n"
@@ -160,6 +170,16 @@ class TrustedDataDemo:
                 "output_hash": event["receipt"]["output_hash"],
             }
             for event in self.audit.events()[-4:]
+        ]
+        provider_mapping_preview = [
+            {
+                "provider_id": mapping["provider_id"],
+                "product_id": mapping["product_id"],
+                "mapping_version": mapping["mapping_version"],
+                "adapter": mapping["adapter"],
+                "fields": mapping["fields"],
+            }
+            for mapping in self.registry.list_provider_mappings().values()
         ]
         grid_rows = [
             {
@@ -289,6 +309,14 @@ class TrustedDataDemo:
                 "osdk_exposure": "verifies result provenance",
                 "preview_rows": audit_preview,
             },
+            {
+                "table": "provider_mapping_registry.field_bindings",
+                "business_object": "RuntimeBinding",
+                "fields": "provider_id, mapping_version, adapter, ontology_field, source_field",
+                "sample_rows": len(provider_mapping_preview),
+                "osdk_exposure": "Runtime dynamically loads provider mappings; OSDK never sees source tables",
+                "preview_rows": provider_mapping_preview,
+            },
         ]
         return {
             "power-credit": grid_rows + energy_rows,
@@ -299,8 +327,11 @@ class TrustedDataDemo:
     def recompile_coordinate_core(self) -> Dict[str, Any]:
         before = self.products["changchun-excavation-risk"]["product_manifest"]
         self.coordinate_core = True
+        self.registry = DOIRRegistryLite.seeded(coordinate_core=True)
         self.products["changchun-excavation-risk"] = compile_product(
-            "changchun-excavation-risk", coordinate_core=True
+            "changchun-excavation-risk",
+            coordinate_core=True,
+            registry=self.registry,
         ).model_dump(mode="json")
         after = self.products["changchun-excavation-risk"]["product_manifest"]
         return {
@@ -393,6 +424,75 @@ class TrustedDataDemo:
             output_granularity=product["output_granularity"],
         )
 
+    def app_for_requester(self, product_id: str, requester_agent: str) -> ApplicationManifest:
+        if product_id == "enterprise-energy-credit":
+            return ApplicationManifest(
+                app_id="remote-bank-risk-workload",
+                version="1.0.0",
+                digest="sha256:remote-bank-risk-workload-demo",
+                requester_agent=requester_agent,
+                allowed_products=[product_id],
+            )
+        if product_id == "changchun-excavation-risk":
+            return ApplicationManifest(
+                app_id="remote-excavation-risk-workload",
+                version="1.0.0",
+                digest="sha256:remote-excavation-risk-workload-demo",
+                requester_agent=requester_agent,
+                allowed_products=[product_id],
+            )
+        return ApplicationManifest(
+            app_id="remote-product-workload",
+            version="1.0.0",
+            digest=f"sha256:{requester_agent}:{product_id}",
+            requester_agent=requester_agent,
+            allowed_products=[product_id],
+        )
+
+    def execute_product_action(
+        self,
+        *,
+        product_id: str,
+        action_id: str,
+        provider_id: str,
+        entitlement_id: str,
+        payload: Dict[str, Any],
+        requester_agent: str,
+    ) -> ExecutionJob:
+        app = self.app_for_requester(product_id, requester_agent)
+        if product_id == "enterprise-energy-credit" and action_id == "compute_credit_features":
+            return self.execute_power_credit(
+                provider_id=provider_id,
+                enterprise_id=payload["enterprise_id"],
+                months=int(payload.get("months", 12)),
+                entitlement_id=entitlement_id,
+                app=app,
+            )
+        if product_id == "changchun-excavation-risk" and action_id == "assess_excavation_risk":
+            return self.execute_changchun_risk(
+                entitlement_id=entitlement_id,
+                excavation_area=payload["excavation_area"],
+                excavation_depth=float(payload["excavation_depth"]),
+                construction_method=payload["construction_method"],
+                project_id=payload["project_id"],
+                app=app,
+            )
+        return ExecutionJob(
+            job_id=f"job_{uuid4().hex[:12]}",
+            product_id=product_id,
+            provider_id=provider_id,
+            status="failed",
+            trace=[
+                {
+                    "title": "Runtime action 未注册",
+                    "actor": "Provider Runtime",
+                    "detail": f"{product_id}.{action_id} 没有可执行 handler 或 adapter binding。",
+                    "facts": {"product_id": product_id, "action_id": action_id},
+                }
+            ],
+            policy_decision=PolicyDecision(allowed=False, reason="runtime_action_not_registered"),
+        )
+
     def execute_power_credit(
         self,
         *,
@@ -461,18 +561,14 @@ class TrustedDataDemo:
         }
         product = self.products[product_id]["product_manifest"]
         product_package = self.products[product_id]
-        source_mapping = {
-            "grid": {
-                "EnergyUsage.kwh": "monthly_usage.total_kwh",
-                "BillingRecord.late_days": "paid_date - due_date",
-                "Enterprise.enterprise_id": "customer.unified_credit_code",
-            },
-            "integrated-energy": {
-                "EnergyUsage.kwh": "billing.energy_qty",
-                "BillingRecord.late_days": "settle_date - deadline",
-                "Enterprise.enterprise_id": "enterprise.enterprise_no",
-            },
-        }[provider_id]
+        provider_mapping = self.registry.get_provider_mapping(provider_id)
+        adapter = adapter_for(provider_mapping)
+        adapter.require_fields(
+            "EnergyUsage.kwh",
+            "BillingRecord.late_days",
+            "Enterprise.enterprise_id",
+        )
+        source_mapping = adapter.describe()
         trace = [
             {
                 "title": "前端选择企业并发起查询",
@@ -510,7 +606,11 @@ class TrustedDataDemo:
                 "title": "Runtime 将本体字段映射到底层数据",
                 "actor": PROVIDERS[provider_id]["display_name"],
                 "detail": "映射只在 Provider 数据域内使用，外部应用看不到表名和连接信息。",
-                "facts": source_mapping,
+                "facts": {
+                    "mapping_version": provider_mapping["mapping_version"],
+                    "adapter": provider_mapping["adapter"],
+                    "fields": source_mapping,
+                },
             },
             {
                 "title": "Provider 本地扫描并计算特征",
@@ -543,7 +643,7 @@ class TrustedDataDemo:
             entitlement_id=entitlement_id,
             application_digest=app.digest,
             ontology_version=product["ontology"]["id"] + "@" + product["ontology"]["version"],
-            mapping_version=PROVIDERS[provider_id]["mapping_version"],
+            mapping_version=provider_mapping["mapping_version"],
             product_version=product["product_version"],
             runtime_version=f"{provider_id}-runtime@0.1.0",
             data_window=f"{records[0]['period']}..{records[-1]['period']}" if records else "empty",
@@ -681,6 +781,13 @@ class TrustedDataDemo:
         }
         product = self.products[product_id]["product_manifest"]
         product_package = self.products[product_id]
+        provider_mapping = self.registry.get_provider_mapping(provider_id)
+        adapter = adapter_for(provider_mapping)
+        adapter.require_fields(
+            "PipelineSegment.exact_coordinates",
+            "PipelineSegment.asset_type",
+            "ExcavationProject.excavation_area",
+        )
         trace = [
             {
                 "title": "前端提交开挖风险请求",
@@ -726,9 +833,9 @@ class TrustedDataDemo:
                 "actor": "长春城市生命线 Provider Runtime",
                 "detail": "精确坐标和监测摘要只在数据域内用于空间计算，不返回给请求方。",
                 "facts": {
-                    "PipelineSegment.exact_coordinates": "gis.pipeline_layer.geometry",
-                    "PipelineSegment.asset_type": "gis.pipeline_layer.asset_type",
-                    "MonitoringSignal.summary": "iot.monitoring_summary",
+                    "mapping_version": provider_mapping["mapping_version"],
+                    "adapter": provider_mapping["adapter"],
+                    "fields": adapter.describe(),
                 },
             },
             {
@@ -767,7 +874,7 @@ class TrustedDataDemo:
             entitlement_id=entitlement_id,
             application_digest=app.digest,
             ontology_version=product["ontology"]["id"] + "@" + product["ontology"]["version"],
-            mapping_version=PROVIDERS[provider_id]["mapping_version"],
+            mapping_version=provider_mapping["mapping_version"],
             product_version=product["product_version"],
             runtime_version="changchun-runtime@0.1.0",
             data_window="2026-Q2",

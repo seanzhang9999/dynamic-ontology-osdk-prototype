@@ -25,6 +25,44 @@ PROVIDERS = {
 }
 
 
+PROVIDER_FIELD_MAPPINGS = {
+    "grid": {
+        "provider_id": "grid",
+        "product_id": "enterprise-energy-credit",
+        "mapping_version": "grid-energy-mapping@1.0.0",
+        "adapter": "sql",
+        "fields": {
+            "EnergyUsage.kwh": "monthly_usage.total_kwh",
+            "BillingRecord.late_days": "paid_date - due_date",
+            "Enterprise.enterprise_id": "customer.unified_credit_code",
+        },
+    },
+    "integrated-energy": {
+        "provider_id": "integrated-energy",
+        "product_id": "enterprise-energy-credit",
+        "mapping_version": "integrated-energy-mapping@1.0.0",
+        "adapter": "sql",
+        "fields": {
+            "EnergyUsage.kwh": "billing.energy_qty",
+            "BillingRecord.late_days": "settle_date - deadline",
+            "Enterprise.enterprise_id": "enterprise.enterprise_no",
+        },
+    },
+    "changchun": {
+        "provider_id": "changchun",
+        "product_id": "changchun-excavation-risk",
+        "mapping_version": "changchun-lifeline-mapping@1.0.0",
+        "adapter": "gis",
+        "fields": {
+            "PipelineSegment.exact_coordinates": "gis.pipeline_layer.geometry",
+            "PipelineSegment.asset_type": "gis.pipeline_layer.asset_type",
+            "ExcavationProject.excavation_area": "request.excavation_area",
+            "MonitoringSignal.summary": "iot.monitoring_summary",
+        },
+    },
+}
+
+
 def _months() -> List[str]:
     return [f"2025-{month:02d}" for month in range(7, 13)] + [
         f"2026-{month:02d}" for month in range(1, 7)
@@ -221,6 +259,32 @@ def build_power_doir() -> Dict[str, Any]:
         },
         "action_types": {
             "compute_credit_features": {
+                "description": "Compute purpose-bound enterprise energy credit features inside a Provider Runtime.",
+                "inputs": {
+                    "provider_id": {
+                        "type": "string",
+                        "required": True,
+                        "transport": "envelope",
+                        "description": "Provider Runtime route, for example grid or integrated-energy.",
+                    },
+                    "enterprise_id": {
+                        "type": "string",
+                        "required": True,
+                        "description": "Unified enterprise identifier selected by the requester.",
+                    },
+                    "months": {
+                        "type": "integer",
+                        "required": False,
+                        "default": 12,
+                        "description": "Number of recent months to summarize.",
+                    },
+                    "entitlement_id": {
+                        "type": "string",
+                        "required": True,
+                        "transport": "envelope",
+                        "description": "Purpose-bound authorization issued by Policy Service.",
+                    },
+                },
                 "depends_on": ["EnergyUsage.kwh", "BillingRecord.late_days"],
                 "returns": "CreditResult",
             }
@@ -324,6 +388,42 @@ def build_changchun_doir(coordinate_core: bool = False) -> Dict[str, Any]:
         },
         "action_types": {
             "assess_excavation_risk": {
+                "description": "Assess excavation risk inside Changchun lifeline Runtime without exposing exact pipeline coordinates.",
+                "inputs": {
+                    "provider_id": {
+                        "type": "string",
+                        "required": False,
+                        "default": "changchun",
+                        "transport": "envelope",
+                        "description": "Provider Runtime route for the lifeline domain.",
+                    },
+                    "project_id": {
+                        "type": "string",
+                        "required": True,
+                        "description": "Construction or excavation project identifier.",
+                    },
+                    "excavation_area": {
+                        "type": "GeoJSON",
+                        "required": True,
+                        "description": "GeoJSON polygon submitted by the requester.",
+                    },
+                    "excavation_depth": {
+                        "type": "number",
+                        "required": True,
+                        "description": "Excavation depth in meters.",
+                    },
+                    "construction_method": {
+                        "type": "string",
+                        "required": True,
+                        "description": "Construction method, for example MECHANICAL or MANUAL.",
+                    },
+                    "entitlement_id": {
+                        "type": "string",
+                        "required": True,
+                        "transport": "envelope",
+                        "description": "Purpose-bound authorization issued by Policy Service.",
+                    },
+                },
                 "depends_on": [
                     "PipelineSegment.exact_coordinates",
                     "PipelineSegment.asset_type",

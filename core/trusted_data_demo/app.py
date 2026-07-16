@@ -3,15 +3,17 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from .audit import AuditLog
+from .gateway import GatewayError, SimpleTrustedGateway
 from .models import ApplicationManifest
 from .runtime import DEFAULT_APP, TrustedDataDemo
 
 
 demo = TrustedDataDemo()
+gateway = SimpleTrustedGateway(demo)
 
 
 def create_app():
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, Header, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
 
     app = FastAPI(title="Trusted Data Product Flow Demo", version="0.1.0")
@@ -30,6 +32,10 @@ def create_app():
     @app.get("/demo/state")
     def state() -> Dict[str, Any]:
         return demo.state()
+
+    @app.get("/products")
+    def products() -> Dict[str, Any]:
+        return gateway.products()
 
     @app.get("/products/{product_id}")
     def product(product_id: str) -> Dict[str, Any]:
@@ -56,6 +62,7 @@ def create_app():
             requester_agent=payload["requester_agent"],
             provider_id=payload["provider_id"],
             output_granularity=payload["output_granularity"],
+            consume=False,
         )
         return decision.model_dump(mode="json")
 
@@ -65,8 +72,26 @@ def create_app():
 
     @app.post("/policy/evaluate")
     def policy_evaluate(payload: Dict[str, Any]) -> Dict[str, Any]:
+        payload.setdefault("consume", False)
         decision = demo.policy.evaluate(**payload)
         return decision.model_dump(mode="json")
+
+    @app.post("/actions/execute")
+    def gateway_execute_action(
+        payload: Dict[str, Any],
+        x_api_key: Optional[str] = Header(default=None),
+    ) -> Dict[str, Any]:
+        try:
+            response = gateway.execute_action(payload, api_key=x_api_key)
+        except GatewayError as exc:
+            status_code = 403 if exc.status == "denied" else 422
+            raise HTTPException(
+                status_code=status_code,
+                detail={"status": exc.status, "error_code": exc.reason},
+            ) from exc
+        if response["status"] == "denied":
+            raise HTTPException(status_code=403, detail=response)
+        return response
 
     @app.post("/applications/submit")
     def submit_application(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -130,6 +155,34 @@ def create_app():
             excavation_depth=float(payload.get("excavation_depth", 3.5)),
             construction_method=payload.get("construction_method", "MECHANICAL"),
         )
+
+    @app.post("/demo/run/remote-power-credit")
+    def run_remote_power_credit(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        payload = payload or {}
+        enterprise_id = payload.get("enterprise_id", "91300000DEMO0007")
+        provider_id = payload.get("provider_id", "grid")
+        entitlement = demo.create_entitlement(
+            product_id="enterprise-energy-credit",
+            provider_id=provider_id,
+            data_subject=enterprise_id,
+            requester_agent="agent:bank-risk",
+        )
+        product = demo.products["enterprise-energy-credit"]["product_manifest"]
+        envelope = {
+            "request_id": "req_demo_remote_osdk",
+            "requester_agent": "agent:bank-risk",
+            "provider_id": provider_id,
+            "product_id": "enterprise-energy-credit",
+            "product_version": product["product_version"],
+            "action_id": "compute_credit_features",
+            "entitlement_id": entitlement["entitlement_id"],
+            "purpose": product["purpose"],
+            "payload": {
+                "enterprise_id": enterprise_id,
+                "months": int(payload.get("months", 12)),
+            },
+        }
+        return gateway.execute_action(envelope, api_key="demo_key_bank_agent")
 
     @app.post("/demo/recompile-coordinate-core")
     def recompile_coordinate_core() -> Dict[str, Any]:

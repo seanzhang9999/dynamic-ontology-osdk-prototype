@@ -37,10 +37,12 @@ class ProductPackage(BaseModel):
     product_manifest: Dict[str, Any]
     ontology_model: Dict[str, Any]
     product_schema: Dict[str, Any]
+    action_schemas: Dict[str, Any] = Field(default_factory=dict)
     runtime_binding: Dict[str, Any]
     quality_certificate: Dict[str, Any]
     compatibility_report: str
     python_osdk: str
+    sdk_files: Dict[str, str] = Field(default_factory=dict)
     mcp_tools: List[Dict[str, Any]]
     openapi: Dict[str, Any]
 

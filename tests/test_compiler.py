@@ -1,11 +1,16 @@
 import pathlib
 import sys
 import unittest
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "core"))
 
-from trusted_data_demo.compiler import CompileError, compile_product
+from trusted_data_demo.compiler import (
+    CompileError,
+    compile_product,
+    write_python_sdk_packages,
+)
 
 
 class CompilerTests(unittest.TestCase):
@@ -22,8 +27,11 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("credit_score", package.product_schema["properties"])
         self.assertIn("enterprise_id: str", package.python_osdk)
         self.assertIn("entitlement_id: str", package.python_osdk)
-        self.assertIn('action_id="compute_credit_features"', package.python_osdk)
+        self.assertIn("ProviderRuntimeClient", package.python_osdk)
+        self.assertIn("action_id='compute_credit_features'", package.python_osdk)
         self.assertNotIn("def compute_credit_features(self, **payload)", package.python_osdk)
+        self.assertIn("provider_id", package.action_schemas["compute_credit_features"]["inputs"])
+        self.assertIn("ComputeCreditFeaturesInput", package.sdk_files["enterprise_energy_credit/models.py"])
         self.assertEqual(manifest["raw_export"], False)
 
     def test_forbidden_compute_field_cannot_be_added_to_output(self):
@@ -43,10 +51,32 @@ class CompilerTests(unittest.TestCase):
 
         self.assertNotIn(("PipelineSegment", "exact_coordinates"), after_readable)
         self.assertIn("assess_excavation_risk", after.product_manifest["actions"])
-        self.assertIn("excavation_area: dict", after.python_osdk)
-        self.assertIn('action_id="assess_excavation_risk"', after.python_osdk)
+        self.assertIn("excavation_area: Dict[str, Any]", after.python_osdk)
+        self.assertIn("action_id='assess_excavation_risk'", after.python_osdk)
         self.assertEqual(after.product_manifest["version"], "1.1.0")
         self.assertEqual(before.product_manifest["id"], after.product_manifest["id"])
+
+    def test_sdk_package_files_are_generated(self):
+        package = compile_product("enterprise-energy-credit")
+        self.assertIn("pyproject.toml", package.sdk_files)
+        self.assertIn("enterprise_energy_credit/client.py", package.sdk_files)
+        self.assertIn("enterprise_energy_credit/runtime.py", package.sdk_files)
+        self.assertIn("ProviderRuntimeClient", package.sdk_files["enterprise_energy_credit/runtime.py"])
+
+    def test_generated_sdk_package_can_be_imported(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            written = write_python_sdk_packages(tmpdir)
+            sys.path.insert(0, str(pathlib.Path(written["enterprise-energy-credit"])))
+            try:
+                from enterprise_energy_credit import (  # type: ignore
+                    EnterpriseEnergyCreditClient,
+                    ProviderRuntimeClient,
+                )
+
+                self.assertEqual(EnterpriseEnergyCreditClient.__name__, "EnterpriseEnergyCreditClient")
+                self.assertEqual(ProviderRuntimeClient.__name__, "ProviderRuntimeClient")
+            finally:
+                sys.path.pop(0)
 
 
 if __name__ == "__main__":
