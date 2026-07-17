@@ -32,14 +32,20 @@ CHANGCHUN_APP = ApplicationManifest(
 
 
 class TrustedDataDemo:
-    def __init__(self) -> None:
+    def __init__(self, provider_scope: Optional[str] = None) -> None:
+        if provider_scope is not None and provider_scope not in PROVIDERS:
+            raise ValueError(f"unknown_provider_scope:{provider_scope}")
+        self.provider_scope = provider_scope
         self.policy = EntitlementStore()
         self.audit = AuditLog()
         self.power_data = {
-            "grid": make_power_records("grid"),
-            "integrated-energy": make_power_records("integrated-energy"),
+            provider_id: make_power_records(provider_id)
+            for provider_id in ("grid", "integrated-energy")
+            if provider_scope in (None, provider_id)
         }
-        self.changchun_assets = make_changchun_assets()
+        self.changchun_assets = (
+            make_changchun_assets() if provider_scope in (None, "changchun") else {}
+        )
         self.coordinate_core = False
         self.registry = DOIRRegistryLite.seeded(coordinate_core=self.coordinate_core)
         self.products = compile_all(
@@ -83,6 +89,7 @@ class TrustedDataDemo:
         self,
         *,
         product_package: Dict[str, Any],
+        provider_id: str,
         enterprise_id: str,
         months: int,
         entitlement_id: str,
@@ -95,10 +102,14 @@ class TrustedDataDemo:
             + "runtime = ProviderRuntimeClient(base_url=\"http://127.0.0.1:8000\", api_key=\"demo_key_bank_agent\", requester_agent=\"agent:bank-risk\")\n"
             + "client = EnterpriseEnergyCreditClient(runtime=runtime)\n"
             + "credit_result = client.compute_credit_features(\n"
-            + "    provider_id=\"grid\",\n"
+            + "    providers=[\n"
+            + "        ProviderBinding(\n"
+            + f"            provider_id=\"{provider_id}\",\n"
+            + f"            entitlement_id=\"{entitlement_id}\",\n"
+            + "        ),\n"
+            + "    ],\n"
             + f"    enterprise_id=\"{enterprise_id}\",\n"
             + f"    months={months},\n"
-            + f"    entitlement_id=\"{entitlement_id}\",\n"
             + ")\n"
         )
 
@@ -119,12 +130,16 @@ class TrustedDataDemo:
             + "runtime = ProviderRuntimeClient(base_url=\"http://127.0.0.1:8000\", api_key=\"demo_key_construction_agent\", requester_agent=\"agent:construction-safety\")\n"
             + "client = ChangchunExcavationRiskClient(runtime=runtime)\n"
             + "risk_result = client.assess_excavation_risk(\n"
-            + "    provider_id=\"changchun\",\n"
+            + "    providers=[\n"
+            + "        ProviderBinding(\n"
+            + "            provider_id=\"changchun\",\n"
+            + f"            entitlement_id=\"{entitlement_id}\",\n"
+            + "        ),\n"
+            + "    ],\n"
             + f"    project_id=\"{project_id}\",\n"
             + f"    excavation_depth={excavation_depth},\n"
             + f"    construction_method=\"{construction_method}\",\n"
             + "    excavation_area={\"type\": \"Polygon\", \"coordinates\": \"<GeoJSON>\"},\n"
-            + f"    entitlement_id=\"{entitlement_id}\",\n"
             + ")\n"
         )
 
@@ -458,7 +473,29 @@ class TrustedDataDemo:
         entitlement_id: str,
         payload: Dict[str, Any],
         requester_agent: str,
+        policy_decision: Optional[PolicyDecision] = None,
     ) -> ExecutionJob:
+        if self.provider_scope is not None and provider_id != self.provider_scope:
+            return ExecutionJob(
+                job_id=f"job_{uuid4().hex[:12]}",
+                product_id=product_id,
+                provider_id=provider_id,
+                status="failed",
+                trace=[
+                    {
+                        "title": "Provider scope mismatch",
+                        "actor": "Provider Runtime",
+                        "detail": "Runtime only executes actions for its configured Provider.",
+                        "facts": {
+                            "configured_provider": self.provider_scope,
+                            "requested_provider": provider_id,
+                        },
+                    }
+                ],
+                policy_decision=PolicyDecision(
+                    allowed=False, reason="provider_scope_mismatch"
+                ),
+            )
         app = self.app_for_requester(product_id, requester_agent)
         if product_id == "enterprise-energy-credit" and action_id == "compute_credit_features":
             return self.execute_power_credit(
@@ -467,6 +504,7 @@ class TrustedDataDemo:
                 months=int(payload.get("months", 12)),
                 entitlement_id=entitlement_id,
                 app=app,
+                policy_decision=policy_decision,
             )
         if product_id == "changchun-excavation-risk" and action_id == "assess_excavation_risk":
             return self.execute_changchun_risk(
@@ -476,6 +514,7 @@ class TrustedDataDemo:
                 construction_method=payload["construction_method"],
                 project_id=payload["project_id"],
                 app=app,
+                policy_decision=policy_decision,
             )
         return ExecutionJob(
             job_id=f"job_{uuid4().hex[:12]}",
@@ -501,9 +540,10 @@ class TrustedDataDemo:
         entitlement_id: str,
         app: ApplicationManifest = DEFAULT_APP,
         months: int = 12,
+        policy_decision: Optional[PolicyDecision] = None,
     ) -> ExecutionJob:
         product_id = "enterprise-energy-credit"
-        decision = self._policy_decision(
+        decision = policy_decision or self._policy_decision(
             entitlement_id=entitlement_id,
             product_id=product_id,
             provider_id=provider_id,
@@ -586,6 +626,7 @@ class TrustedDataDemo:
                 "detail": "OSDK 由动态本体和产品投影生成，只暴露命名动作。",
                 "code": self._power_osdk_code(
                     product_package=product_package,
+                    provider_id=provider_id,
                     enterprise_id=enterprise_id,
                     months=months,
                     entitlement_id=entitlement_id,
@@ -696,6 +737,7 @@ class TrustedDataDemo:
         scores = [job.result["credit_score"] for job in jobs if job.result]
         aggregate = {
             "enterprise_id": enterprise_id,
+            "aggregation_owner": "bank-application",
             "provider_count": len(scores),
             "aggregated_credit_score": round(mean(scores), 2) if scores else None,
             "risk_level": "low"
@@ -716,10 +758,11 @@ class TrustedDataDemo:
         construction_method: str,
         project_id: str,
         app: ApplicationManifest = CHANGCHUN_APP,
+        policy_decision: Optional[PolicyDecision] = None,
     ) -> ExecutionJob:
         product_id = "changchun-excavation-risk"
         provider_id = "changchun"
-        decision = self._policy_decision(
+        decision = policy_decision or self._policy_decision(
             entitlement_id=entitlement_id,
             product_id=product_id,
             provider_id=provider_id,

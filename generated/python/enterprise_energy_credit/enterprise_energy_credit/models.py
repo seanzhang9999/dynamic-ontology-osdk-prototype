@@ -1,16 +1,21 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ComputeCreditFeaturesInput(BaseModel):
-    """Input model generated from DOIR action_types inputs."""
+class ProviderBinding(BaseModel):
+    """Logical Provider and its purpose-bound entitlement."""
     model_config = ConfigDict(extra="forbid")
-    provider_id: str = Field(description='Provider Runtime route, for example grid or integrated-energy.')
+    provider_id: str
+    entitlement_id: str
+
+
+class ComputeCreditFeaturesInput(BaseModel):
+    """Shared business payload generated from DOIR action inputs."""
+    model_config = ConfigDict(extra="forbid")
     enterprise_id: str = Field(description='Unified enterprise identifier selected by the requester.')
-    entitlement_id: str = Field(description='Purpose-bound authorization issued by Policy Service.')
     months: int = Field(default=12, description='Number of recent months to summarize.')
 
 
@@ -28,3 +33,30 @@ class ComputeCreditFeaturesResult(BaseModel):
     request_id: Optional[str] = None
     policy_decision: Optional[str] = None
     runtime_version: Optional[str] = None
+
+
+class ComputeCreditFeaturesProviderResult(BaseModel):
+    """One Provider Runtime outcome returned by Gateway fan-out."""
+    model_config = ConfigDict(extra="forbid")
+    provider_id: str
+    status: Literal["succeeded", "denied", "failed"]
+    result: Optional[ComputeCreditFeaturesResult] = None
+    error_code: Optional[str] = None
+    receipt_id: Optional[str] = None
+    runtime_version: Optional[str] = None
+    job_id: Optional[str] = None
+    policy_decision: Optional[str] = None
+    runtime_trace: List[Dict[str, Any]] = Field(default_factory=list)
+    receipt: Optional[Dict[str, Any]] = None
+
+
+class ComputeCreditFeaturesMultiProviderResult(BaseModel):
+    """Gateway fan-out response; business aggregation remains caller-owned."""
+    model_config = ConfigDict(extra="forbid")
+    request_id: Optional[str] = None
+    status: Literal["completed", "partial", "failed"]
+    product_id: str
+    action_id: str
+    provider_results: Dict[str, ComputeCreditFeaturesProviderResult]
+    gateway: Dict[str, Any] = Field(default_factory=dict)
+    trace: List[Dict[str, Any]] = Field(default_factory=list)

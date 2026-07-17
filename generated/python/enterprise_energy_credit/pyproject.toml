@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "enterprise_energy_credit"
 version = "1.0.0"
 description = "Generated Product OSDK for enterprise-energy-credit"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = ["pydantic>=2.7"]
 
 [tool.setuptools.packages.find]

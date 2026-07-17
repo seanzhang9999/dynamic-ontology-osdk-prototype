@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -46,24 +46,30 @@ class ProviderRuntimeClient:
         *,
         product_id: str,
         action_id: str,
-        provider_id: str,
-        entitlement_id: str,
         payload: Dict[str, Any],
         purpose: str,
+        providers: Optional[List[Dict[str, str]]] = None,
+        provider_id: Optional[str] = None,
+        entitlement_id: Optional[str] = None,
         product_version: Optional[str] = None,
     ) -> Dict[str, Any]:
         envelope = {
             "request_id": f"req_{uuid4().hex[:12]}",
             "requester_agent": self.requester_agent,
-            "provider_id": provider_id,
             "product_id": product_id,
             "product_version": product_version,
             "action_id": action_id,
-            "entitlement_id": entitlement_id,
             "purpose": purpose or self.default_purpose,
             "payload": payload,
             "client_timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        if providers is not None:
+            envelope["providers"] = providers
+        else:
+            if not provider_id or not entitlement_id:
+                raise ValueError("providers or provider_id/entitlement_id are required")
+            envelope["provider_id"] = provider_id
+            envelope["entitlement_id"] = entitlement_id
         return self._post("/actions/execute", envelope)
 
     def _post(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -121,5 +127,5 @@ def _raise_for_gateway_error(status_code: int, payload: Any) -> None:
         raise ContractViolation(str(reason or "contract violation"), status_code=status_code, detail=detail)
     if status_code >= 500:
         raise RuntimeUnavailable(str(reason or "runtime unavailable"), status_code=status_code, detail=detail)
-    if status == "failed":
+    if status == "failed" and "provider_results" not in payload:
         raise ProviderRuntimeClientError(str(reason or "runtime failed"), status_code=status_code, detail=detail)

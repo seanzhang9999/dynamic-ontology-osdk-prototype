@@ -1,425 +1,158 @@
-# 项目说明：动态本体 OSDK 可信数据产品流转 Demo
+# 项目状态：动态本体 OSDK 可信数据产品原型
 
-本文说明当前项目的目标、代码结构、可运行能力，以及最重要的：本项目中 **OSDK 的实际实现情况**。它用于帮助后续研发、评审或外部沟通准确理解“已经做成了什么”和“还没有做成什么”。
+**状态快照：2026-07-17，基于 `main` 当前工作树（基线提交 `49d577e`）**
 
-## 1. 项目当前定位
+## 1. 结论先行
 
-本项目是一个 **MVP 原型**，目标是验证：
+项目现在已经验证以下完整路径：
 
-- 数据提供方保留原始数据，需求方应用进入数据域执行。
-- 动态本体把异构数据源映射成稳定的业务对象、查询和动作。
-- Product OSDK 只暴露经过产品投影和策略允许的命名能力，不暴露表、字段、SQL、连接串或原始文件。
-- Policy Service、Provider Runtime、Audit Receipt 共同保证用途受控、结果受控、过程可审计。
+```text
+银行应用
+  -> 生成的 typed Product OSDK
+  -> 独立 Gateway 进程
+  -> 并行 HTTP fan-out
+  -> 多个独立 Provider Runtime 进程
+  -> 逐 Provider 受控结果和签名 Receipt
+  -> 银行应用自行聚合
+```
 
-当前已经有两个可演示场景：
+这意味着“远程 OSDK 经 Gateway 调用本地 Provider Runtime”“Gateway 同时连接不同 Provider”“单 Provider 故障不影响其他结果”已经从同进程设计变为可运行实现。Gateway 不持有 Provider 数据，也不计算银行信用总分。
 
-| 场景 | 目标 | 当前状态 |
+但项目仍不能表述为生产级数据留域平台：Provider Runtime 当前读取的是进程内合成 fixture，Provider mapping 仍未执行真实 SQL/GIS/API 查询；Registry、Entitlement、Audit 和签名密钥仍是内存态；服务间身份使用开发共享密钥。准确定位是：**跨进程联邦数据产品调用的技术原型已经成立，真实异构数据源和生产信任链尚未完成。**
+
+## 2. 当前业务场景
+
+| 场景 | 业务目标 | 当前结果 |
 | --- | --- | --- |
-| 企业用电征信 | 同一银行应用进入国家电网、综合能源两个异构 Provider Runtime，本地计算征信特征，原始用电数据不出域 | 已实现可运行链路 |
-| 长春城市生命线开挖风险 | 施工应用提交开挖范围，Runtime 本地使用管线数据计算风险，只输出摘要和凭证 | 已实现可运行链路 |
+| 企业用电征信 | 银行一次调用电网与综合能源 Provider，获得可用于风险模型的特征摘要 | Gateway 并行调用两个 Runtime，返回逐 Provider 分数、质量摘要、运行版本和 Receipt；银行决定权重与聚合 |
+| 长春城市生命线开挖风险 | 施工方提交工程范围，管线数据方本地计算风险 | Changchun Runtime 返回风险等级、影响资产类型和建议，不返回精确坐标、管段 ID 或拓扑 |
 
-## 2. 代码结构
-
-核心代码位置：
+## 3. 当前服务职责
 
 ```text
-core/trusted_data_demo/
-  app.py        FastAPI API 入口
-  compiler.py   Product Compiler 与 OSDK/MCP/OpenAPI 元数据生成
-  runtime.py    两个场景的 Provider Runtime 与演示编排
-  policy.py     授权、用途、期限、撤销、配额校验
-  audit.py      哈希链事件、Ed25519 签名凭证、凭证验证
-  fixtures.py   合成数据、DOIR fixture、产品定义
-  models.py     ProductPackage、Entitlement、Receipt 等模型
-  geo.py        长春场景的轻量空间计算
+gateway_app.py
+  身份校验、产品合同、Entitlement、Provider 路由、fan-out、响应关联
+
+provider_app.py
+  固定 Provider 身份、内部 Gateway 凭据校验、本地动作执行、Receipt 签发
+
+control_plane.py
+  Gateway 侧产品目录、Registry Lite 和 Entitlement Store，不加载 Provider 数据
+
+runtime.py
+  Provider 侧业务动作、输出投影、执行轨迹和签名审计
+
+osdk_generator.py
+  ProviderBinding、typed 业务输入、逐 Provider 结果和 MultiProviderResult 生成
 ```
 
-前端控制台：
+Docker Compose 中 `gateway`、`grid-runtime`、`integrated-energy-runtime`、`changchun-runtime` 是独立服务。`legacy-demo` 仅用于保持当前 Demo Console 的原有双场景可视化，不能作为新拆分架构的验收入口。
 
-```text
-ui/demo-console/
-  src/main.jsx
-  src/styles.css
-```
+## 4. 已验证的技术路线
 
-场景配置：
+| 技术路线点 | 状态 | 当前证据与边界 |
+| --- | --- | --- |
+| DOIR 到产品合同编译 | 已验证 | 编译 manifest、动作 schema、Python SDK、MCP 声明和 OpenAPI 元数据；字段分级与版本变化有测试 |
+| 敏感字段不进入产品表面 | 已验证 | `HIDDEN`、`INTERNAL_ONLY`、`COMPUTE_ONLY` 等分级限制 readable fields 和输出；用电明细与管线坐标不会出现在产品结果 |
+| 业务动作真实计算 | 已验证 | 信用特征和开挖风险由记录或空间规则计算，不是固定 JSON 返回；输入数据仍是合成 fixture |
+| Gateway 与 Provider 进程拆分 | 已验证 | Gateway 通过 HTTP 调 Provider 内部动作入口；Provider 固定自身 `provider_id`，拒绝错误身份和无内部凭据请求 |
+| 多 Provider Gateway fan-out | 已验证 | 一个 OSDK 请求携带多个逻辑 Provider binding；Gateway 并发调度，返回 `completed`、`partial` 或 `failed` |
+| Gateway 不做业务聚合 | 已验证 | 响应只含 `provider_results` 和技术状态；代码与测试确认没有 `aggregated_credit_score` 等银行业务结果 |
+| typed 多 Provider OSDK | 已验证 | 生成 `ProviderBinding`、逐 Provider action result 和 `MultiProviderResult`；业务 client 不持有 Provider URL |
+| Provider 故障隔离 | 已验证 | 一个 Runtime 不可用时返回 `partial`，其他 Provider 的结果和 Receipt 保留 |
+| 用途授权与撤销 | 已验证但未持久化 | Gateway 对每个 Provider 单独预检和扣减 Entitlement；撤销的 Provider 不会收到 Runtime 请求 |
+| 结果完整性 Receipt | 已验证但未持久化 | 每个 Provider 进程生成带 input/output hash、前序 hash 和 Ed25519 签名的 Receipt；篡改后验签失败 |
+| 真实数据留域接入 | 未验证 | Runtime 只加载本 Provider 的 fixture，但尚未连接独立 SQLite/DuckDB/GIS/API 数据源 |
+| 生产级跨组织信任 | 未验证 | 内部服务认证是共享开发 key，没有 mTLS、OIDC、密钥轮换、远程证明或持久化审计 |
 
-```text
-scenarios/power-credit/
-scenarios/changchun-lifeline/
-```
+## 5. 多 Provider 合同
 
-文档：
-
-```text
-docs/demo-contract.md
-docs/data-dictionary.md
-docs/acceptance-checklist.md
-docs/demo-script.md
-```
-
-## 3. 当前可运行能力
-
-启动后端：
-
-```bash
-PYTHONPATH=core .venv/bin/python -m uvicorn trusted_data_demo.app:app --host 127.0.0.1 --port 8000
-```
-
-启动前端：
-
-```bash
-cd ui/demo-console
-VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1 --port 5173
-```
-
-访问：
-
-- API: http://127.0.0.1:8000/health
-- Demo Console: http://127.0.0.1:5173
-
-Demo Console 当前被组织为三个 tab：
-
-- 用电征信。
-- 长春开挖风险。
-- 动态本体运维。
-
-三个 tab 都采用一致的左右结构：
-
-- 左侧上段：前端查询工作台和业务结果。
-- 左侧中段：动态本体结构和字段暴露级别。
-- 左侧下段：底层数据表/资产、映射对象、关键字段和 OSDK 暴露说明。
-- 右侧：任务实时运行情况，展示从前端请求、OSDK 调用、本体动作、底层表映射、本地计算、输出过滤到凭证签名的全过程。
-
-Console 顶部的“授权记录”不是用户数量，也不是权限级别。它表示当前内存态 Policy Service 中已经签发的 `Entitlement` 数量。每条 `Entitlement` 绑定：
-
-- 请求方 Agent。
-- 数据产品。
-- 数据主体。
-- Provider。
-- 用途。
-- 输出粒度。
-- 有效期和调用次数。
-
-例如运行一次企业用电征信查询，会分别给 `grid` 和 `integrated-energy` 两个 Provider 签发授权，因此授权记录数通常增加 2。
-
-主要演示接口：
-
-```bash
-curl -X POST http://127.0.0.1:8000/demo/run/power-credit \
-  -H 'Content-Type: application/json' \
-  -d '{"enterprise_id":"91300000DEMO0007"}'
-
-curl -X POST http://127.0.0.1:8000/demo/run/changchun
-
-curl -X POST http://127.0.0.1:8000/demo/recompile-coordinate-core
-```
-
-测试：
-
-```bash
-PYTHONPATH=core .venv/bin/python -m unittest discover -s tests
-cd ui/demo-console && npm run build
-```
-
-## 4. OSDK 在本项目中的含义
-
-本项目中的 OSDK 不是一个泛化数据访问 SDK，也不是数据库 ORM。它表示：
-
-```text
-由动态本体和产品策略编译出来的、面向某个可信数据产品的受控能力接口。
-```
-
-它的职责是：
-
-- 把底层表、字段、文件、GIS 图层隐藏起来。
-- 只暴露命名 Query/Action。
-- 把分类分级、用途、输出粒度、质量门槛编译进产品接口。
-- 给 Agent 或业务应用提供稳定的调用面。
-- 配合 Provider Runtime 和 Policy Service 防止绕过。
-
-换句话说，OSDK 是“产品能力合同”，不是最终安全边界。真正的执行与校验由 Provider Runtime、Policy Service、Audit Service 完成。
-
-## 5. OSDK 的实际实现情况
-
-当前 OSDK 处于 **MVP 元数据生成 + Runtime 合同验证阶段**，不是完整生产级 SDK。
-
-### 5.1 已实现
-
-`core/trusted_data_demo/compiler.py` 中的 `compile_product()` 会生成 `ProductPackage`，包含：
-
-- `product_manifest`
-- `product_schema`
-- `runtime_binding`
-- `quality_certificate`
-- `compatibility_report`
-- `python_osdk`
-- `mcp_tools`
-- `openapi`
-
-可以通过 API 查看产品包：
-
-```bash
-curl http://127.0.0.1:8000/products/enterprise-energy-credit
-curl http://127.0.0.1:8000/products/changchun-excavation-risk
-```
-
-其中 `python_osdk` 是生成出来的 Python SDK 代码字符串。例如企业用电征信产品会生成类似：
+生成的 Product OSDK 不区分 Provider URL，而是在业务动作中传递逻辑绑定：
 
 ```python
-class EnterpriseEnergyCreditClient:
-    def __init__(self, runtime):
-        self.runtime = runtime
-
-    def compute_credit_features(self, **payload):
-        return self.runtime.execute_action(
-            "enterprise-energy-credit",
-            "compute_credit_features",
-            payload,
-        )
+response = client.compute_credit_features(
+    providers=[
+        ProviderBinding(provider_id="grid", entitlement_id="ent_grid"),
+        ProviderBinding(
+            provider_id="integrated-energy",
+            entitlement_id="ent_energy",
+        ),
+    ],
+    enterprise_id="91300000DEMO0007",
+    months=12,
+)
 ```
 
-长春开挖风险产品会生成类似：
-
-```python
-class ChangchunExcavationRiskClient:
-    def __init__(self, runtime):
-        self.runtime = runtime
-
-    def assess_excavation_risk(self, **payload):
-        return self.runtime.execute_action(
-            "changchun-excavation-risk",
-            "assess_excavation_risk",
-            payload,
-        )
-```
-
-`mcp_tools` 目前是 MCP Tool 的 JSON 声明，表达 Agent 可见的工具名称、输入 schema 和输出 schema。
-
-`openapi` 目前是最小 OpenAPI 元数据，用来说明产品动作最终会落到 Runtime 的受控执行接口。
-
-### 5.2 OSDK 编译规则已生效
-
-当前编译器已经实现分类分级对接口的影响：
-
-| 暴露级别 | 当前行为 |
-| --- | --- |
-| `HIDDEN` | 不进入 readable fields，也不能作为产品输出 |
-| `INTERNAL_ONLY` | 不作为外部产品输出 |
-| `COMPUTE_ONLY` | 可被 Runtime 本地计算使用，但不能直接输出 |
-| `AGGREGATE_ONLY` | 可作为聚合/摘要语义暴露 |
-| `EXTERNAL_RESULT` | 可进入产品输出 schema |
-
-测试覆盖了两个关键点：
-
-- 企业用电征信中 `EnergyUsage.kwh`、`EnergyUsage.raw_monthly_kwh` 不会出现在产品可读接口或输出中。
-- 长春场景中“管线精确坐标”升级为核心数据后，产品版本变为 `1.1.0`，坐标读取面仍然不暴露，但 `assess_excavation_risk` 动作仍可使用坐标在本地计算。
-
-### 5.3 Product OSDK 与 Runtime 的关系
-
-目前调用链是：
+Gateway 对共享业务 payload 校验一次产品合同，对每个 Provider 分别校验 Entitlement 并并行执行。响应保持来源：
 
 ```text
-Product Compiler
-  -> ProductPackage
-  -> python_osdk / mcp_tools / openapi / runtime_binding
-  -> Provider Runtime
-  -> Policy Service
-  -> Audit Receipt
+status: completed | partial | failed
+provider_results:
+  grid:               succeeded | denied | failed + result + receipt
+  integrated-energy:  succeeded | denied | failed + result + receipt
 ```
 
-Runtime 当前提供的受控 API 包括：
+银行随后在自己的代码中定义：必须成功的最少 Provider 数、来源权重、缺失来源降级规则和最终评分。这样可避免 Gateway 获得或固化银行的核心风控算法，也避免基础设施把不同来源的审计证据揉成一个不可追溯结果。
 
-- `GET /products/{product_id}`
-- `POST /entitlements`
-- `POST /entitlements/verify`
-- `POST /entitlements/{entitlement_id}/revoke`
-- `POST /policy/evaluate`
-- `POST /applications/submit`
-- `POST /jobs/execute`
-- `GET /jobs/{job_id}`
-- `GET /receipts/{job_id}`
-- `POST /receipts/verify`
+## 6. 内存态现在影响什么
 
-业务应用并不直接拿数据库连接，也不直接读取源表。它只能提交产品动作请求，由 Runtime 做：
+“内存态只影响工程实施，不影响关键技术路线验证”现在比拆分前更接近事实，但仍不能完全成立。
 
-- 产品版本确认
-- application manifest 检查
-- entitlement 校验
-- purpose 校验
-- provider 校验
-- output granularity 校验
-- 本地计算
-- 输出白名单
-- 凭证签名
+它**不再否定**以下结论：
 
-### 5.4 Demo Console 如何使用 OSDK
+- Gateway 与 Provider 确实存在网络和进程边界。
+- 一个 Gateway 请求可以并行路由到两个独立 Runtime。
+- Provider 只能执行自身固定身份范围内的动作。
+- 多 Provider 的部分失败合同能够工作。
+- Gateway 不需要加载 Provider 数据或执行银行聚合。
 
-当前前端 Demo Console **没有直接 import 生成的 SDK 包**。
+它仍然**影响**以下关键结论：
 
-它调用后端演示 API：
-
-- `/demo/run/power-credit`
-- `/demo/run/changchun`
-- `/demo/recompile-coordinate-core`
-- `/demo/state`
-
-因此，前端证明的是“产品包、Runtime、策略和凭证链路可运行”，不是“前端应用通过 npm 包形式消费 TypeScript OSDK”。
-
-这点很重要：当前 OSDK 的实现重点在 **后端产品编译和受控 Runtime 合同**，还没有做到完整 SDK 分发。
-
-## 6. 两个产品的 OSDK 表面
-
-### 6.1 企业用电征信产品
-
-Product ID:
-
-```text
-enterprise-energy-credit
-```
-
-Purpose:
-
-```text
-enterprise_credit_assessment
-```
-
-动作：
-
-```text
-compute_credit_features
-```
-
-允许输出：
-
-- `credit_score`
-- `risk_level`
-- `coverage_months`
-- `usage_stability_index`
-- `late_payment_count_band`
-- `provider_count`
-- `quality_summary`
-- `explanation`
-- `execution_receipt`
-
-禁止输出：
-
-- 原始月度用电明细
-- 原始 kWh 序列
-- 逐笔缴费流水
-- 表名、源行 ID、连接串
-
-### 6.2 长春开挖风险产品
-
-Product ID:
-
-```text
-changchun-excavation-risk
-```
-
-Purpose:
-
-```text
-construction_safety_assessment
-```
-
-动作：
-
-```text
-assess_excavation_risk
-```
-
-允许输出：
-
-- `overall_risk`
-- `affected_asset_types`
-- `affected_segment_count`
-- `recommendations`
-- `quality_summary`
-- `execution_receipt`
-
-禁止输出：
-
-- 精确管线坐标
-- 完整管网拓扑
-- 权属单位细节
-- 原始监测时间序列
-
-## 7. 当前 OSDK 的限制
-
-当前实现有意保持 MVP 范围，主要限制如下：
-
-| 能力 | 当前状态 | 说明 |
+| 内存态实现 | 尚未证明的能力 | 业务风险 |
 | --- | --- | --- |
-| Python SDK | 生成代码字符串 | 尚未写入独立 package 目录，也未发布 wheel |
-| TypeScript SDK | 未实现 | 前端现在直接调用 REST demo API |
-| MCP Server | 未实现 | 已生成 MCP Tool JSON 元数据，但没有启动真正 MCP server |
-| OpenAPI | 最小元数据 | 可表达动作路径，但不是完整生产 OpenAPI |
-| Runtime handle | 概念实现 | 生成的 SDK 依赖 `runtime.execute_action()`，尚未提供独立 client runtime 类 |
-| 持久化 | 内存态 | Registry、Policy、Audit 当前重启后丢失 |
-| 应用沙箱 | 轻量 manifest 校验 | 没有真正生产级容器隔离、网络隔离、文件系统隔离 |
-| 多服务部署 | Compose 结构已给出 | 多个服务当前运行同一 FastAPI 应用，角色通过部署结构表达 |
-| 真实数据适配 | 未实现 | 当前使用合成数据和 fixture |
+| Registry 使用 SQLite `:memory:` | 产品发布历史、兼容性、回滚和可重放编译 | 重启后无法证明当时执行的是哪一版合同 |
+| Entitlement 使用 Python 字典 | 跨实例撤销、并发配额和事务一致性 | 重启丢失；当前先扣配额再远程执行，网络失败也会消耗调用次数 |
+| Audit 和 Ed25519 私钥在 Runtime 进程内 | Provider 身份连续性和跨重启取证 | 重启后无法以同一身份验证历史 Receipt |
+| Provider 数据是 fixture 列表 | 真实数据最小权限访问、物理隔离和 connector 防绕过 | 只能证明 Runtime 输出边界，不能证明生产数据源不会被旁路读取 |
+| Provider route 来自环境变量 | 动态发现、健康路由和组织注册 | 适合原型，不适合大规模 Provider 网络 |
 
-## 8. 已经可以证明的事情
+因此，当前可以说“核心联邦调用和产品合同路线已经验证”；不能说“内存态只剩落库工作”或“生产数据不出域已经完成验证”。
 
-当前代码已经可以证明：
+## 7. Dummy 与真实实现边界
 
-- 同一个企业用电征信产品合同可以服务两个异构 Provider。
-- 产品输出不包含原始用电明细和缴费流水。
-- Entitlement 撤销后 Runtime 会拒绝执行。
-- 执行凭证可用 Ed25519 验证，篡改后验证失败。
-- 分类分级变化会影响产品版本和 OSDK 可读表面。
-- 长春风险产品可以在本地使用敏感坐标计算，但只输出风险摘要。
+不是 dummy 的部分：
 
-对应测试文件：
+- DOIR 编译、字段分级、产品版本和 SDK 生成。
+- Gateway 合同校验、逐 Provider 授权、并发 fan-out 和部分失败处理。
+- Provider 身份范围校验、业务计算、输出投影、哈希和 Ed25519 签名。
+- 生成的 OSDK 通过 HTTP 调 Gateway，不导入后端 Runtime 对象。
 
-```text
-tests/test_compiler.py
-tests/test_runtime_policy_audit.py
-```
+仍是关键替身的部分：
 
-## 9. 下一步建议
+| 位置 | 当前实现 | 下一阶段验收标准 |
+| --- | --- | --- |
+| Provider 数据 | 每进程只加载本 Provider 的合成 fixture | 每个 Provider 连接独立 SQLite/DuckDB/GeoPackage 或 API，且物理 schema 不同 |
+| Provider adapter | 映射描述和字段存在性校验 | 映射驱动真实查询、转换、过滤和聚合；Runtime 只有本 Provider 连接权限 |
+| 服务身份 | 静态 API key 和共享内部 key | OIDC/JWT 或 mTLS 工作负载身份、Provider 证书、密钥轮换 |
+| Policy / Registry / Audit | 内存存储与启动时密钥 | 持久化、重启可恢复、撤销可传播、Receipt 可历史验签 |
+| 隐私控制 | 输出 schema 过滤 | 最小群体阈值、查询预算、推断泄露测试，必要时差分隐私或机密计算 |
 
-如果要把 OSDK 从 MVP 推到更像真实 SDK，建议按以下顺序做：
+## 8. 已完成的运行验证
 
-1. **落盘 SDK artifact**
-   - 将 `python_osdk` 写入 `generated/python/{product_id}/`。
-   - 生成 `pyproject.toml`、client runtime、typed models。
-   - 加测试证明外部脚本可以 import 生成的 SDK 调用 Runtime。
+自动化测试覆盖编译器、生成 SDK、Gateway fan-out、撤销、Provider 作用域、业务 Runtime 和 Receipt 验签。手工多进程 HTTP 验收还完成了两种路径：
 
-2. **实现 MCP Server**
-   - 把 `mcp_tools` JSON 接到真实 MCP server。
-   - 让 Agent 通过 MCP Tool 调用产品，而不是直接调用 demo API。
+1. Gateway 同时调用 `grid` 和 `integrated-energy` Runtime，生成的 `EnterpriseEnergyCreditClient` 获得两个成功结果、两个不同的 Runtime 标识和两个签名 Receipt。
+2. 停止 `integrated-energy` Runtime 后重复同一 OSDK 调用，响应为 `partial`；`grid` 结果继续成功，失败来源为 `provider_unavailable`。
 
-3. **实现 TypeScript SDK**
-   - 从 `product_schema` 生成 TS 类型。
-   - 从 `runtime_binding` 生成 typed client。
-   - 让 Demo Console 改为使用 TypeScript OSDK client。
+本次收尾验证结果：Python 单元测试 `22` 项全部通过，Demo Console 的 Vite 生产构建通过。当前机器未安装 Docker CLI，因此未执行 `docker compose config` 或容器级验收；独立进程 HTTP 验收使用本机 Python/Uvicorn 完成。
 
-4. **持久化 Registry、Policy、Audit**
-   - 用 SQLite 保存产品版本、授权、作业和凭证。
-   - 支持重启后继续查看历史凭证。
+## 9. 下一阶段优先级
 
-5. **增强 Application Host**
-   - 真正执行签名应用包。
-   - 限制网络、文件系统、环境变量和资源。
-   - 将 Runtime handle 注入应用沙箱。
+1. **真实异构 adapter**：先将两个用电 Provider 分别接入不同 schema 的 SQLite/DuckDB，再将长春场景接入 GeoPackage 或空间数据库。
+2. **持久化证据链**：保存 Entitlement、作业、Receipt、Provider 公钥和产品发布版本，增加重启回放测试。
+3. **可靠执行语义**：加入 request idempotency、配额 reservation/commit、重试和长任务状态，解决当前“请求失败但配额已扣”问题。
+4. **可信服务身份**：用 mTLS/OIDC 替代开发共享密钥，并将 requester 与 Provider 身份写入可验证 Receipt。
+5. **数据空间互操作**：优先兼容 DSP/ODRL 的目录、合同和策略表达，不重做完整数据空间基础设施。
+6. **业务壁垒验证**：建设银行产品本体、Provider conformance kit 和接入时效指标，证明相较定制接口或 Clean Room 的工程优势。
 
-6. **接入真实数据适配器**
-   - 从 fixture 切换为 CSV、DuckDB、PostgreSQL、GIS 服务或数据中台 API。
-   - 保持 OSDK 合同不变，只替换 Runtime adapter。
-
-## 10. 简短结论
-
-当前项目已经不是纯方案文档，而是一个能跑通的可信数据产品流转 MVP。
-
-但必须准确表述 OSDK 状态：
-
-```text
-当前已经实现了“由动态本体和产品策略生成 OSDK 合同与工具元数据，并通过 Provider Runtime 执行”的原型。
-
-当前尚未实现“可独立安装、分发、由外部应用 import 的完整 Python/TypeScript OSDK 包”，也尚未实现真实 MCP server。
-```
-
-这也是下一阶段最值得投入的工程方向。
+竞品、新颖性和进入门槛的专项结论见 `docs/research/2026-07-17-data-service-landscape-and-novelty.md`。

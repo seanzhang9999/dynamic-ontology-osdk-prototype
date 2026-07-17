@@ -62,6 +62,14 @@ def _ordered_inputs(action: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
     return required + optional
 
 
+def _business_inputs(action: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+    return [
+        (name, spec)
+        for name, spec in _ordered_inputs(action)
+        if spec.get("transport") != "envelope"
+    ]
+
+
 def action_input_schema(action: Dict[str, Any]) -> Dict[str, Any]:
     properties: Dict[str, Any] = {}
     required: List[str] = []
@@ -88,19 +96,28 @@ def _render_models(product: Dict[str, Any], action_schemas: Dict[str, Any], outp
     blocks = [
         "from __future__ import annotations",
         "",
-        "from typing import Any, Dict, List, Optional",
+        "from typing import Any, Dict, List, Literal, Optional",
         "",
         "from pydantic import BaseModel, ConfigDict, Field",
+        "",
+        "",
+        "class ProviderBinding(BaseModel):",
+        '    """Logical Provider and its purpose-bound entitlement."""',
+        '    model_config = ConfigDict(extra="forbid")',
+        "    provider_id: str",
+        "    entitlement_id: str",
         "",
         "",
     ]
     for action_id, action in action_schemas.items():
         input_cls = class_name_from_id(action_id, "Input")
         result_cls = class_name_from_id(action_id, "Result")
+        provider_result_cls = class_name_from_id(action_id, "ProviderResult")
+        multi_result_cls = class_name_from_id(action_id, "MultiProviderResult")
         blocks.append(f"class {input_cls}(BaseModel):")
-        blocks.append('    """Input model generated from DOIR action_types inputs."""')
+        blocks.append('    """Shared business payload generated from DOIR action inputs."""')
         blocks.append("    model_config = ConfigDict(extra=\"forbid\")")
-        for name, spec in _ordered_inputs(action):
+        for name, spec in _business_inputs(action):
             py_type = _py_type(spec.get("type", "object"))
             description = spec.get("description", "")
             if _is_required(spec):
@@ -109,7 +126,7 @@ def _render_models(product: Dict[str, Any], action_schemas: Dict[str, Any], outp
                 blocks.append(
                     f"    {name}: {py_type} = Field(default={_default_code(spec)}, description={description!r})"
                 )
-        if not action.get("inputs"):
+        if not _business_inputs(action):
             blocks.append("    pass")
         blocks.append("")
         blocks.append("")
@@ -123,6 +140,33 @@ def _render_models(product: Dict[str, Any], action_schemas: Dict[str, Any], outp
         blocks.append("    request_id: Optional[str] = None")
         blocks.append("    policy_decision: Optional[str] = None")
         blocks.append("    runtime_version: Optional[str] = None")
+        blocks.append("")
+        blocks.append("")
+        blocks.append(f"class {provider_result_cls}(BaseModel):")
+        blocks.append('    """One Provider Runtime outcome returned by Gateway fan-out."""')
+        blocks.append('    model_config = ConfigDict(extra="forbid")')
+        blocks.append("    provider_id: str")
+        blocks.append('    status: Literal["succeeded", "denied", "failed"]')
+        blocks.append(f"    result: Optional[{result_cls}] = None")
+        blocks.append("    error_code: Optional[str] = None")
+        blocks.append("    receipt_id: Optional[str] = None")
+        blocks.append("    runtime_version: Optional[str] = None")
+        blocks.append("    job_id: Optional[str] = None")
+        blocks.append("    policy_decision: Optional[str] = None")
+        blocks.append("    runtime_trace: List[Dict[str, Any]] = Field(default_factory=list)")
+        blocks.append("    receipt: Optional[Dict[str, Any]] = None")
+        blocks.append("")
+        blocks.append("")
+        blocks.append(f"class {multi_result_cls}(BaseModel):")
+        blocks.append('    """Gateway fan-out response; business aggregation remains caller-owned."""')
+        blocks.append('    model_config = ConfigDict(extra="forbid")')
+        blocks.append("    request_id: Optional[str] = None")
+        blocks.append('    status: Literal["completed", "partial", "failed"]')
+        blocks.append("    product_id: str")
+        blocks.append("    action_id: str")
+        blocks.append(f"    provider_results: Dict[str, {provider_result_cls}]")
+        blocks.append("    gateway: Dict[str, Any] = Field(default_factory=dict)")
+        blocks.append("    trace: List[Dict[str, Any]] = Field(default_factory=list)")
         blocks.append("")
         blocks.append("")
     return "\n".join(blocks).rstrip() + "\n"
@@ -167,7 +211,7 @@ def _render_runtime() -> str:
         import asyncio
         import json
         from datetime import datetime, timezone
-        from typing import Any, Dict, Optional
+        from typing import Any, Dict, List, Optional
         from urllib.error import HTTPError, URLError
         from urllib.request import Request, urlopen
         from uuid import uuid4
@@ -210,24 +254,30 @@ def _render_runtime() -> str:
                 *,
                 product_id: str,
                 action_id: str,
-                provider_id: str,
-                entitlement_id: str,
                 payload: Dict[str, Any],
                 purpose: str,
+                providers: Optional[List[Dict[str, str]]] = None,
+                provider_id: Optional[str] = None,
+                entitlement_id: Optional[str] = None,
                 product_version: Optional[str] = None,
             ) -> Dict[str, Any]:
                 envelope = {
                     "request_id": f"req_{uuid4().hex[:12]}",
                     "requester_agent": self.requester_agent,
-                    "provider_id": provider_id,
                     "product_id": product_id,
                     "product_version": product_version,
                     "action_id": action_id,
-                    "entitlement_id": entitlement_id,
                     "purpose": purpose or self.default_purpose,
                     "payload": payload,
                     "client_timestamp": datetime.now(timezone.utc).isoformat(),
                 }
+                if providers is not None:
+                    envelope["providers"] = providers
+                else:
+                    if not provider_id or not entitlement_id:
+                        raise ValueError("providers or provider_id/entitlement_id are required")
+                    envelope["provider_id"] = provider_id
+                    envelope["entitlement_id"] = entitlement_id
                 return self._post("/actions/execute", envelope)
 
             def _post(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -285,7 +335,7 @@ def _render_runtime() -> str:
                 raise ContractViolation(str(reason or "contract violation"), status_code=status_code, detail=detail)
             if status_code >= 500:
                 raise RuntimeUnavailable(str(reason or "runtime unavailable"), status_code=status_code, detail=detail)
-            if status == "failed":
+            if status == "failed" and "provider_results" not in payload:
                 raise ProviderRuntimeClientError(str(reason or "runtime failed"), status_code=status_code, detail=detail)
         '''
     ).lstrip()
@@ -297,15 +347,18 @@ def _render_client(product: Dict[str, Any], action_schemas: Dict[str, Any]) -> s
     imports = [
         "from __future__ import annotations",
         "",
-        "from typing import Any, Dict",
+        "from typing import Any, Dict, List",
         "",
         "from .runtime import AsyncProviderRuntimeClient, ProviderRuntimeClient",
         "from .models import (",
+        "    ProviderBinding,",
     ]
     model_names: List[str] = []
     for action_id in action_schemas:
         model_names.append(class_name_from_id(action_id, "Input"))
         model_names.append(class_name_from_id(action_id, "Result"))
+        model_names.append(class_name_from_id(action_id, "ProviderResult"))
+        model_names.append(class_name_from_id(action_id, "MultiProviderResult"))
     imports.extend(f"    {name}," for name in model_names)
     imports.append(")")
     imports.append("")
@@ -317,19 +370,37 @@ def _render_client(product: Dict[str, Any], action_schemas: Dict[str, Any]) -> s
     blocks.append("")
     for action_id, action in action_schemas.items():
         input_cls = class_name_from_id(action_id, "Input")
-        result_cls = class_name_from_id(action_id, "Result")
-        params = []
-        for name, spec in _ordered_inputs(action):
+        multi_result_cls = class_name_from_id(action_id, "MultiProviderResult")
+        params = ["providers: List[ProviderBinding]"]
+        for name, spec in _business_inputs(action):
             default = "" if _is_required(spec) else f" = {_default_code(spec)}"
             params.append(f"{name}: {_py_type(spec.get('type', 'object'))}{default}")
         signature = ", ".join(["self", "*", *params])
-        blocks.append(f"    def {action_id}({signature}) -> {result_cls}:")
+        blocks.append(f"    def {action_id}({signature}) -> {multi_result_cls}:")
         blocks.extend(_docstring_lines(action))
-        blocks.extend(_method_body(product, action_id, action, input_cls, result_cls, async_mode=False))
+        blocks.extend(
+            _method_body(
+                product,
+                action_id,
+                action,
+                input_cls,
+                multi_result_cls,
+                async_mode=False,
+            )
+        )
         blocks.append("")
-        blocks.append(f"    async def a{action_id}({signature}) -> {result_cls}:")
+        blocks.append(f"    async def a{action_id}({signature}) -> {multi_result_cls}:")
         blocks.extend(_docstring_lines(action))
-        blocks.extend(_method_body(product, action_id, action, input_cls, result_cls, async_mode=True))
+        blocks.extend(
+            _method_body(
+                product,
+                action_id,
+                action,
+                input_cls,
+                multi_result_cls,
+                async_mode=True,
+            )
+        )
         blocks.append("")
     return "\n".join(blocks).rstrip() + "\n"
 
@@ -352,62 +423,50 @@ def _method_body(
     action_id: str,
     action: Dict[str, Any],
     input_cls: str,
-    result_cls: str,
+    multi_result_cls: str,
     *,
     async_mode: bool,
 ) -> List[str]:
-    arg_names = [name for name, _ in _ordered_inputs(action)]
+    arg_names = [name for name, _ in _business_inputs(action)]
     model_args = ", ".join(f"{name}={name}" for name in arg_names)
-    transport_names = [
-        name
-        for name, spec in action.get("inputs", {}).items()
-        if spec.get("transport") == "envelope"
-    ]
-    provider_expr = "payload.pop('provider_id')"
-    entitlement_expr = "payload.pop('entitlement_id')"
-    if "provider_id" not in transport_names:
-        provider_expr = "payload.pop('provider_id', '')"
-    if "entitlement_id" not in transport_names:
-        entitlement_expr = "payload.pop('entitlement_id', '')"
     maybe_await = "await " if async_mode else ""
     return [
         f"        request = {input_cls}({model_args})",
         "        payload = request.model_dump(exclude_none=True)",
-        f"        provider_id_value = {provider_expr}",
-        f"        entitlement_id_value = {entitlement_expr}",
+        "        provider_values = [",
+        "            ProviderBinding.model_validate(item).model_dump() for item in providers",
+        "        ]",
         f"        response = {maybe_await}self.runtime.execute_action(",
         f"            product_id={product['id']!r},",
         f"            action_id={action_id!r},",
-        "            provider_id=provider_id_value,",
-        "            entitlement_id=entitlement_id_value,",
+        "            providers=provider_values,",
         f"            purpose={product['purpose']!r},",
         f"            product_version={product['id'] + '@' + product['version']!r},",
         "            payload=payload,",
         "        )",
-        "        result_payload = dict(response.get('result') or {})",
-        "        result_payload.update({",
-        "            'receipt_id': response.get('receipt_id'),",
-        "            'request_id': response.get('request_id'),",
-        "            'policy_decision': response.get('policy_decision'),",
-        "            'runtime_version': response.get('runtime_version'),",
-        "        })",
-        f"        return {result_cls}.model_validate(result_payload)",
+        f"        return {multi_result_cls}.model_validate(response)",
     ]
 
 
 def _render_init(product: Dict[str, Any], action_schemas: Dict[str, Any]) -> str:
     client_cls = class_name_from_id(product["id"], "Client")
-    names = [client_cls, "ProviderRuntimeClient", "AsyncProviderRuntimeClient"]
+    names = [
+        client_cls,
+        "ProviderBinding",
+        "ProviderRuntimeClient",
+        "AsyncProviderRuntimeClient",
+    ]
     lines = [
         f"from .client import {client_cls}",
         "from .runtime import AsyncProviderRuntimeClient, ProviderRuntimeClient",
         "from .models import (",
+        "    ProviderBinding,",
     ]
     for action_id in action_schemas:
-        lines.append(f"    {class_name_from_id(action_id, 'Input')},")
-        lines.append(f"    {class_name_from_id(action_id, 'Result')},")
-        names.append(class_name_from_id(action_id, "Input"))
-        names.append(class_name_from_id(action_id, "Result"))
+        for suffix in ("Input", "Result", "ProviderResult", "MultiProviderResult"):
+            model_name = class_name_from_id(action_id, suffix)
+            lines.append(f"    {model_name},")
+            names.append(model_name)
     lines.append(")")
     lines.append("")
     lines.append(f"__all__ = {names!r}")
@@ -422,18 +481,19 @@ def _render_readme(product: Dict[str, Any], action_schemas: Dict[str, Any]) -> s
     if product["id"] == "changchun-excavation-risk":
         api_key = "demo_key_construction_agent"
         requester_agent = "agent:construction-safety"
-        provider_id = "changchun"
+        provider_lines = [
+            '    ProviderBinding(provider_id="changchun", entitlement_id="ent_changchun"),'
+        ]
     else:
         api_key = "demo_key_bank_agent"
         requester_agent = "agent:bank-risk"
-        provider_id = "grid"
-    sample_args = []
-    for name, spec in _ordered_inputs(action):
-        if name == "provider_id":
-            sample_args.append(f'    provider_id="{provider_id}",')
-        elif name == "entitlement_id":
-            sample_args.append('    entitlement_id="ent_demo",')
-        elif spec.get("type") == "string":
+        provider_lines = [
+            '    ProviderBinding(provider_id="grid", entitlement_id="ent_grid"),',
+            '    ProviderBinding(provider_id="integrated-energy", entitlement_id="ent_energy"),',
+        ]
+    sample_args = ["    providers=providers,"]
+    for name, spec in _business_inputs(action):
+        if spec.get("type") == "string":
             sample_args.append(f'    {name}="demo",')
         elif spec.get("type") == "integer":
             sample_args.append(f"    {name}={spec.get('default', 1)},")
@@ -442,22 +502,27 @@ def _render_readme(product: Dict[str, Any], action_schemas: Dict[str, Any]) -> s
         else:
             sample_args.append(f"    {name}={{}},")
     args = "\n".join(sample_args)
+    providers = "\n".join(provider_lines)
     return (
         f"# {product['id']} Product OSDK\n\n"
         "Generated from DOIR action schema. The SDK is a remote workload client: "
         "it calls a trusted gateway, not a database or internal Runtime object.\n\n"
         "```python\n"
-        f"from {pkg} import {client_cls}, ProviderRuntimeClient\n\n"
+        f"from {pkg} import {client_cls}, ProviderBinding, ProviderRuntimeClient\n\n"
         "runtime = ProviderRuntimeClient(\n"
         "    base_url=\"http://127.0.0.1:8000\",\n"
         f"    api_key=\"{api_key}\",\n"
         f"    requester_agent=\"{requester_agent}\",\n"
         ")\n"
         f"client = {client_cls}(runtime=runtime)\n"
+        "providers = [\n"
+        f"{providers}\n"
+        "]\n"
         f"result = client.{first_action}(\n"
         f"{args}\n"
         ")\n"
-        "print(result.receipt_id)\n"
+        "for provider_id, provider_result in result.provider_results.items():\n"
+        "    print(provider_id, provider_result.status, provider_result.receipt_id)\n"
         "```\n"
     )
 
@@ -474,7 +539,7 @@ def _render_pyproject(product: Dict[str, Any]) -> str:
         name = "{pkg}"
         version = "{product['version']}"
         description = "Generated Product OSDK for {product['id']}"
-        requires-python = ">=3.9"
+        requires-python = ">=3.10"
         dependencies = ["pydantic>=2.7"]
 
         [tool.setuptools.packages.find]

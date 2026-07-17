@@ -28,6 +28,9 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("enterprise_id: str", package.python_osdk)
         self.assertIn("entitlement_id: str", package.python_osdk)
         self.assertIn("ProviderRuntimeClient", package.python_osdk)
+        self.assertIn("ProviderBinding", package.python_osdk)
+        self.assertIn("providers: List[ProviderBinding]", package.python_osdk)
+        self.assertIn("ComputeCreditFeaturesMultiProviderResult", package.python_osdk)
         self.assertIn("action_id='compute_credit_features'", package.python_osdk)
         self.assertNotIn("def compute_credit_features(self, **payload)", package.python_osdk)
         self.assertIn("provider_id", package.action_schemas["compute_credit_features"]["inputs"])
@@ -62,6 +65,7 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("enterprise_energy_credit/client.py", package.sdk_files)
         self.assertIn("enterprise_energy_credit/runtime.py", package.sdk_files)
         self.assertIn("ProviderRuntimeClient", package.sdk_files["enterprise_energy_credit/runtime.py"])
+        self.assertIn('requires-python = ">=3.10"', package.sdk_files["pyproject.toml"])
 
     def test_generated_sdk_package_can_be_imported(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -69,12 +73,57 @@ class CompilerTests(unittest.TestCase):
             sys.path.insert(0, str(pathlib.Path(written["enterprise-energy-credit"])))
             try:
                 from enterprise_energy_credit import (  # type: ignore
+                    ComputeCreditFeaturesMultiProviderResult,
                     EnterpriseEnergyCreditClient,
+                    ProviderBinding,
                     ProviderRuntimeClient,
                 )
 
                 self.assertEqual(EnterpriseEnergyCreditClient.__name__, "EnterpriseEnergyCreditClient")
                 self.assertEqual(ProviderRuntimeClient.__name__, "ProviderRuntimeClient")
+                self.assertEqual(ProviderBinding.__name__, "ProviderBinding")
+                self.assertEqual(
+                    ComputeCreditFeaturesMultiProviderResult.__name__,
+                    "ComputeCreditFeaturesMultiProviderResult",
+                )
+
+                class FakeGatewayRuntime:
+                    def execute_action(self, **kwargs):
+                        self.kwargs = kwargs
+                        return {
+                            "request_id": "req_generated_sdk_test",
+                            "status": "completed",
+                            "product_id": "enterprise-energy-credit",
+                            "action_id": "compute_credit_features",
+                            "provider_results": {
+                                "grid": {
+                                    "provider_id": "grid",
+                                    "status": "succeeded",
+                                    "result": {"credit_score": 796},
+                                    "error_code": None,
+                                    "receipt_id": "req_receipt_grid",
+                                    "runtime_version": "grid-runtime@0.1.0",
+                                    "job_id": "job_grid",
+                                    "policy_decision": "allowed",
+                                    "runtime_trace": [],
+                                    "receipt": None,
+                                }
+                            },
+                            "gateway": {},
+                            "trace": [],
+                        }
+
+                runtime = FakeGatewayRuntime()
+                client = EnterpriseEnergyCreditClient(runtime=runtime)
+                response = client.compute_credit_features(
+                    providers=[
+                        ProviderBinding(provider_id="grid", entitlement_id="ent_grid")
+                    ],
+                    enterprise_id="91300000DEMO0007",
+                    months=12,
+                )
+                self.assertEqual(response.provider_results["grid"].result.credit_score, 796)
+                self.assertEqual(runtime.kwargs["providers"][0]["provider_id"], "grid")
             finally:
                 sys.path.pop(0)
 

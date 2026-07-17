@@ -29,8 +29,20 @@ class DOIRRegistryLite:
     def __init__(self, db_path: str | Path = ":memory:") -> None:
         self.db_path = str(db_path)
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._closed = False
         self.conn.row_factory = sqlite3.Row
         self._migrate()
+
+    def close(self) -> None:
+        if not self._closed:
+            self.conn.close()
+            self._closed = True
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
 
     @classmethod
     def seeded(cls, *, coordinate_core: bool = False) -> "DOIRRegistryLite":

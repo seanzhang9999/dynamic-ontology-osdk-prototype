@@ -1,37 +1,39 @@
 services:
-  registry:
+  gateway:
     build:
       context: .
       dockerfile: Dockerfile.api
+    command:
+      - uvicorn
+      - trusted_data_demo.gateway_app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
     environment:
-      DEMO_SERVICE_ROLE: registry
+      GATEWAY_PROVIDER_INTERNAL_KEY: demo_gateway_provider_key
+      PROVIDER_RUNTIME_ROUTES: '{"grid":"http://grid-runtime:8000","integrated-energy":"http://integrated-energy-runtime:8000","changchun":"http://changchun-runtime:8000"}'
     ports:
       - "8000:8000"
-
-  policy:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    environment:
-      DEMO_SERVICE_ROLE: policy
-    ports:
-      - "8001:8000"
-
-  audit:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    environment:
-      DEMO_SERVICE_ROLE: audit
-    ports:
-      - "8002:8000"
+    depends_on:
+      - grid-runtime
+      - integrated-energy-runtime
+      - changchun-runtime
 
   grid-runtime:
     build:
       context: .
       dockerfile: Dockerfile.api
+    command:
+      - uvicorn
+      - trusted_data_demo.provider_app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
     environment:
-      DEMO_SERVICE_ROLE: grid-runtime
+      DEMO_PROVIDER_ID: grid
+      GATEWAY_PROVIDER_INTERNAL_KEY: demo_gateway_provider_key
     ports:
       - "8010:8000"
 
@@ -39,8 +41,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+    command:
+      - uvicorn
+      - trusted_data_demo.provider_app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
     environment:
-      DEMO_SERVICE_ROLE: integrated-energy-runtime
+      DEMO_PROVIDER_ID: integrated-energy
+      GATEWAY_PROVIDER_INTERNAL_KEY: demo_gateway_provider_key
     ports:
       - "8011:8000"
 
@@ -48,19 +58,40 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+    command:
+      - uvicorn
+      - trusted_data_demo.provider_app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
     environment:
-      DEMO_SERVICE_ROLE: changchun-runtime
+      DEMO_PROVIDER_ID: changchun
+      GATEWAY_PROVIDER_INTERNAL_KEY: demo_gateway_provider_key
     ports:
       - "8012:8000"
+
+  legacy-demo:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command:
+      - uvicorn
+      - trusted_data_demo.app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - "8090:8000"
 
   demo-console:
     build:
       context: ./ui/demo-console
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: http://localhost:8000
+        VITE_API_BASE_URL: http://localhost:8090
     ports:
       - "5173:80"
     depends_on:
-      - registry
-
+      - legacy-demo

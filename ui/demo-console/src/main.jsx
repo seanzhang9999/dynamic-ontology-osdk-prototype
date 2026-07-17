@@ -593,11 +593,16 @@ function PowerWorkbench({
         <ResultGrid
           items={[
             ["企业", result.enterprise_id],
-            ["聚合分数", result.aggregated_credit_score],
+            ["银行侧聚合分数", result.aggregated_credit_score],
             ["风险等级", result.risk_level],
             ["Provider", result.provider_count],
           ]}
         />
+      )}
+      {result?.aggregation_owner === "bank-application" && (
+        <div className="note">
+          Gateway 保留各 Provider 的独立结果与凭证，最终权重和评分规则由银行应用执行。
+        </div>
       )}
     </div>
   );
