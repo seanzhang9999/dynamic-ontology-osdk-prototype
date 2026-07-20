@@ -54,16 +54,23 @@
   https://docs.snowflake.com/en/user-guide/cleanrooms/about
 - Databricks Clean Rooms：  
   https://docs.databricks.com/aws/en/clean-rooms/
+- Decentriq Data Clean Rooms：https://www.decentriq.com/data-clean-rooms
 - Ocean Protocol Compute-to-Data：  
   https://docs.oceanprotocol.com/developers/compute-to-data
 - Dawex 数据交换和数据空间平台：  
   https://www.dawex.com/en/data-exchange-technology/interoperability/
+- Dawex Data Exchange Solution：https://www.dawex.com/en/data-exchange-solution/
 - SecretFlow 隐语：  
   https://www.secretflow.org.cn/
+- 隐语可信数据空间介绍：https://www.secretflow.org.cn/zh-CN/docs/feature-exp/latest/yaipurge93fgr7n8
 - 华为云数据空间、数据交换相关产品入口：  
   https://www.huaweicloud.com/product/
+- 华为云 Stack AI 可信数据空间解决方案：https://www.huaweicloud.com/product/huaweicloudstack/data-ai-space.html
+- 华为云可信智能计算服务 TICS：https://www.huaweicloud.com/product/tics/data-flow-solution.html
 - 中国电子云数据要素、数据空间相关产品入口：  
   https://www.cecloud.com/
+- 中国电子云可信数据空间方案公开资料：https://cecloud.com/news/7350769509092823040.html
+- 阿里云 DataWorks 数据开发治理平台：https://www.alibabacloud.com/product/dataworks
 
 当前 Demo 代码依据：
 
@@ -262,7 +269,162 @@ sequenceDiagram
 8. **执行凭证**：Provider 返回带 input/output hash、产品版本、Runtime 版本和 Ed25519 签名的 Receipt。
 9. **部分失败**：某 Provider 不可用时，Gateway 返回 `partial`，成功 Provider 的结果和凭证保留。
 
-## 8. 当前 Demo 的技术验证完整度
+## 8. Demo 场景分析：问题、解决方式与价值
+
+当前 Demo 不是一个单场景页面，而是用四类场景证明同一套机制的不同价值面：用电征信证明多 Provider 数据产品交易，长春开挖证明敏感空间数据可用不可见，动态本体运维证明分类分级驱动接口变化，远程 OSDK 部署证明客户侧 Agent workload 可以通过可信网关访问 Provider Runtime。
+
+### 8.1 企业用电征信可信数据产品
+
+业务问题：
+
+- 银行需要更多非传统征信特征判断中小企业经营稳定性，例如用电覆盖月数、用电波动、缴费逾期区间。
+- 国家电网、综合能源等 Provider 的底层数据结构不同，银行不应逐个对接表结构和接口。
+- 用电明细、缴费流水、客户名称等可能涉及敏感经营信息，Provider 不愿输出原始数据。
+- 银行需要知道结果来自哪个 Provider、基于什么授权、哪一版产品和 Runtime 执行，方便审计和风控解释。
+
+当前 Demo 的解决方式：
+
+- 将两个异构 Provider 映射到统一的 `enterprise-energy-credit` 产品合同。
+- 生成 `EnterpriseEnergyCreditClient`，银行侧只调用 `compute_credit_features`。
+- OSDK 请求中携带多个 `ProviderBinding(provider_id, entitlement_id)`，不携带 Provider Runtime 地址。
+- Gateway 对每个 Provider 分别校验 Entitlement，并 fan-out 到 `grid-runtime` 和 `integrated-energy-runtime`。
+- Provider Runtime 在本地计算用电稳定性、覆盖月数、逾期区间、质量摘要和信用特征，不返回原始用电/缴费明细。
+- Gateway 返回逐 Provider 的结果和 Receipt，银行应用在自己侧决定权重、最低来源数、缺失来源降级和最终评分。
+
+价值：
+
+- 证明“同一个数据产品动作可以跨多个异构数据域执行”。
+- 把银行应用从“对接多个 Provider API/表结构”降为“调用一个 typed OSDK 方法”。
+- Gateway 不获取银行最终风控模型，Provider 不输出原始数据，双方边界清晰。
+- Receipt 让数据交易从“拿到一个分数”升级为“拿到可验证的履约证据”。
+
+当前存在的问题：
+
+- 数据仍是合成 fixture，没有连接真实电力、账单或缴费系统。
+- Provider mapping 目前主要证明字段绑定和语义映射，还没有驱动真实 SQL/DuckDB/API 查询。
+- Entitlement、Policy、Audit 仍是内存态，不具备跨重启、跨实例和并发一致性。
+- 信用特征计算是 Demo 规则，不是银行生产风控模型，也没有坏账标签验证。
+- 隐私保护目前主要依靠输出裁剪，没有实现重复查询预算、最小样本阈值或推断泄露防护。
+
+后续改进：
+
+- 两个 Provider 分别接入不同物理 schema 的 SQLite/DuckDB 或真实 API，证明异构接入。
+- 增加 Provider conformance test，校验同一产品合同下各 Provider 输出结构、质量指标和时间窗口径一致。
+- 将 Entitlement、Receipt、产品版本和 Provider 公钥持久化。
+- 增加银行侧示例 Agent：自动发现产品、申请授权、调用两个 Provider、处理 partial、验签 Receipt、输出风控解释。
+- 增加计量计费事件，把每次 Provider 成功调用与交易结算挂钩。
+
+### 8.2 长春城市生命线开挖风险产品
+
+业务问题：
+
+- 城市管线精确坐标、拓扑和资产标识通常属于高敏感或核心数据，但施工方需要知道开挖风险。
+- 传统数据交付方式要么泄露精确坐标，要么只能给静态审批结论，难以支撑 Agent 自动化规划和多次方案评估。
+- 分类分级一旦变化，应用接口也应同步收缩，否则历史 API 很容易继续暴露敏感能力。
+
+当前 Demo 的解决方式：
+
+- 将 `PipelineSegment`、`ExcavationProject`、`RiskAssessment` 等对象组织为长春场景动态本体。
+- 产品动作 `assess_excavation_risk` 接收开挖范围、深度、施工方式、项目 ID。
+- Runtime 在数据域内使用管线几何、保护规则、历史隐患和监测摘要进行相交、缓冲、距离与规则评分。
+- 输出只包含风险等级、影响资产类型、影响段数、建议和质量摘要，不输出精确坐标、管段 ID 或完整拓扑。
+- 动态本体运维中演示“管线精确坐标升级为核心数据”后重新编译，坐标读取接口消失，但风险评估动作仍可在 Provider 域内使用坐标计算。
+
+价值：
+
+- 证明“数据可用不可见”不只适用于表格，也适用于 GIS 和城市治理数据。
+- 证明分类分级不是写在 PPT 里的制度，而是可以进入编译器，直接改变 OSDK 暴露面。
+- 让施工方 Agent 可以自动评估多个施工方案，而不直接持有核心管线坐标。
+- 给城市生命线、交通、能源、水务等场景提供可复用的数据服务产品模式。
+
+当前存在的问题：
+
+- GIS 计算是简化实现，未接 PostGIS、GeoPackage、坐标系转换或真实空间索引。
+- 重复小范围查询可能反推出管线位置，当前尚无空间隐私预算、最小面积约束或模糊化策略。
+- 风险规则仍是 Demo 规则，缺少专家审批、规则版本、事故样本校验和责任边界。
+- 施工项目审批、监管角色、现场反馈闭环没有完整实现。
+
+后续改进：
+
+- 接入 GeoPackage/PostGIS adapter，支持真实坐标系、空间索引和拓扑质量检查。
+- 加入空间隐私控制：最小查询面积、查询频率限制、结果泛化、风险网格化、敏感区域二次审批。
+- 将规则集版本写入 Product Manifest 和 Receipt，支持事后追责。
+- 增加施工方 Agent 和监管方 Agent：前者生成方案并申请评估，后者审批高风险调用和留存履约证明。
+
+### 8.3 动态本体运维与数据产品编译
+
+业务问题：
+
+- 传统数据目录或数据中台 API 往往是静态接口，字段分级、语义口径、产品范围变化后，很难自动反映到 SDK 和 Agent 工具面。
+- Provider 数据结构会变化，应用接口也会演进，如果没有本体版本和兼容性判断，数据产品很容易变成一次性定制项目。
+- Agent 需要机器可读的能力描述，否则只能靠提示词猜接口、猜字段、猜约束。
+
+当前 Demo 的解决方式：
+
+- 用 DOIR 描述 SourceDataset、ObjectType、PropertyType、LinkType、ActionType、ProductProjection、RuntimeBinding。
+- Product Compiler 从 DOIR、字段分级和产品定义生成 Product Manifest、Schema、MCP Tool、OpenAPI 和 Python OSDK。
+- OSDK Generator 根据 action input schema 生成 typed 方法签名、Pydantic 输入输出模型和 Provider Runtime Client。
+- 运维视图演示分类分级变化后重新编译，接口暴露面同步收缩。
+
+价值：
+
+- 把“数据治理结果”变成“可执行的软件合同”，而不是停留在目录和字段标签。
+- Agent 可以读取 OSDK/MCP 描述，知道能调用什么、需要什么授权、会返回什么。
+- Provider 接入新数据源时，只要通过 conformance test，就能复用已有产品动作和应用。
+- 为数据运营 Agent 提供工作对象：本体映射、质量报告、兼容性报告、产品发布包、变更影响分析。
+
+当前存在的问题：
+
+- Registry 仍是 Lite 版本，未实现生产级 diff、审批、回滚、发布历史和变更影响图。
+- DOIR 仍主要由 fixture seed 生成，不是从真实数据平台、文档和人工标注流程中持续维护。
+- 编译器已从 hardcode 进步到 schema-driven，但类型系统、错误模型、语义版本规则还不完整。
+- 前端运维视图是演示态，不是完整的本体建模和产品发布工作台。
+
+后续改进：
+
+- 建立持久化 DOIR Registry，加入版本树、breaking change 规则、审批流和发布流水线。
+- 建设 Provider mapping IDE 或低代码映射台，支持从数据中台、数据库、API、文档自动生成候选映射。
+- 增加 OSDK artifact 签名和包仓库发布，确保 Agent 使用的是被批准的产品版本。
+- 增加数据运营 Agent：自动发现字段漂移、质量下降、映射失败和产品兼容性风险。
+
+### 8.4 远程 OSDK、可信网关与 Provider Runtime fan-out
+
+业务问题：
+
+- 客户可能要求 OSDK 在客户侧运行，也可能接受在我方沙箱运行，但两种情况下都不应直连 Provider 内网和数据库。
+- 如果一个业务产品需要多个 Provider，客户不应分别维护每个 Provider 的地址、身份、错误处理和凭证格式。
+- 数据空间未来可能接入联邦计算、隐私计算和多 Runtime 编排，需要一个清晰的信任边界。
+
+当前 Demo 的解决方式：
+
+- 生成的 `ProviderRuntimeClient` 只调用 Gateway 的 `/actions/execute`。
+- Gateway 使用逻辑 Provider ID 和 Provider route，将请求 fan-out 到多个独立 Provider Runtime。
+- Provider Runtime 只接受 Gateway 内部调用，校验 `provider_id`、产品版本、用途、policy decision 和内部凭据。
+- OSDK 返回 `MultiProviderResult`，保留每个 Provider 的 `succeeded`、`denied`、`failed`、结果和 Receipt。
+- 当前 Docker Compose 已描述 `gateway`、`grid-runtime`、`integrated-energy-runtime`、`changchun-runtime`、`legacy-demo`、`demo-console` 的拆分拓扑。
+
+价值：
+
+- 证明客户侧 Agent workload、我方沙箱 workload、Provider Runtime 可以解耦部署。
+- Gateway 成为可信数据空间中的策略执行点和路由点，而不是数据计算点。
+- partial 语义使多 Provider 产品更接近真实生产网络：一个 Provider 故障不会抹掉其他 Provider 的履约结果。
+- 为后续 TEE、MPC、联邦分析和跨空间互通保留扩展点。
+
+当前存在的问题：
+
+- API key 和内部 Gateway key 是开发共享密钥，不是生产身份体系。
+- fan-out 使用同步 HTTP 和线程池，不适合长任务、高并发或需要人工审批的异步交易。
+- Provider route 来自配置，不是注册发现、健康路由或跨空间目录解析。
+- 没有 request idempotency、配额 reservation/commit、重试补偿和完整 observability。
+
+后续改进：
+
+- 引入 OIDC/mTLS workload identity、Provider 证书和密钥轮换。
+- 将 `/actions/execute` 扩展为异步 Job API，支持排队、回调、事件通知和人工审批。
+- 建设 Provider Registry 和健康探测，支持动态路由、灰度和故障隔离。
+- 增加 OpenTelemetry trace、结构化审计日志和交易计量事件。
+
+## 9. 当前 Demo 的技术验证完整度
 
 | 能力域 | 当前完整度 | 说明 |
 | --- | --- | --- |
@@ -282,7 +444,7 @@ sequenceDiagram
 
 > 当前 Demo 已完整验证“Agent 通过 OSDK 自动调用可信数据产品”的主技术链路，但尚未完整验证“生产可信数据空间”的身份、合约、连接器、数据源、安全计算、存证审计和交易运营体系。
 
-## 9. 与数据中台的区别和协同关系
+## 10. 与数据中台的区别和协同关系
 
 传统数据中台通常以企业内部数据治理为中心：采集、湖仓、建模、指标、标签、API、报表。它更擅长解决“企业内部如何管好和复用数据”。
 
@@ -312,29 +474,182 @@ flowchart TB
 
 因此，本方案不是“再做一个数据中台”，而是让数据中台中已经治理好的数据能力，进入跨组织、可授权、可审计、Agent 可自动调用的数据交易网络。
 
-## 10. 类似公司与方案对标
+## 11. 类似公司与方案对标：竞争性与互补性
 
-| 方案 | 已有能力 | 与本方案关系 |
-| --- | --- | --- |
-| Apheris Gateway | 数据留在本地 Gateway，中心 Orchestrator 调度计算任务 | 拓扑最接近，证明本地 Runtime + 中心路由可行；本方案差异在动态本体产品合同和 typed OSDK |
-| Eclipse Dataspace Components / Dataspace Protocol | Connector、目录、策略、合同协商、数据面/控制面分离 | 标准和基础设施对标；本方案应兼容而不是重做 |
-| IDS Connector | 分散存储、语义元数据、ODRL 使用控制、应用容器 | 与可信数据空间标准理念一致；本方案补充 Agent/OSDK 执行体验 |
-| AWS / Snowflake / Databricks Clean Rooms | 多方在受控环境分析，原始数据不直接暴露 | 证明“可用不可见”市场成熟；本方案更适合异构 Provider 和业务产品动作 |
-| Ocean Compute-to-Data | 算法到数据侧执行，替代数据下载 | 证明计算靠近数据的交易模型；本方案更强调企业级合约、OSDK 和凭证 |
-| Dawex | 数据交易、数据空间、Connector、ODRL、DSP 互操作 | 数据空间运营和交易平台成熟；本方案可作为服务型数据产品执行层 |
-| Palantir OSDK | Ontology 到 typed SDK，应用调用对象和动作 | OSDK 生成思路最接近；本方案目标是开放、多 Provider、可信数据空间兼容 |
-| SecretFlow 隐语 | 隐私计算、联邦学习、安全多方计算、数据流通基础能力 | 可作为 Runtime 内部隐私计算组件或数据服务方能力 |
-| 华为云、中国电子云等 | 数据要素、数据空间、数据治理、云上安全与行业平台 | 可作为底层云、数据中台、连接器或数据空间平台对标/集成对象 |
+对标结论需要分层：有些方案与我们直接竞争，有些是应当兼容的基础设施，有些是可嵌入 Runtime 的隐私计算能力。不能把所有相邻方案都叫竞品，否则产品边界会发散；也不能忽视它们，因为客户可能已经采购或正在建设这些平台。
 
-结论：市场上已有大量相邻方案，所以不能把“数据不出域”“连接器”“可用不可见”当成独占创新。当前方案真正值得强调的是组合创新：
+### 11.1 竞争性总览
 
-1. 动态本体和分类分级共同编译出产品 OSDK。
-2. OSDK 成为 Agent 自动化数据交易和执行的编程界面。
-3. Gateway 将产品动作 fan-out 到多个 Provider Runtime。
-4. Provider Runtime 在本地执行并返回逐 Provider Receipt。
-5. Agent 可以验证结果来源、授权、产品版本和输入输出 hash。
+| 方案类别 | 代表方案 | 与我们是否竞争 | 竞争强度 | 推荐策略 |
+| --- | --- | --- | --- | --- |
+| 联邦计算 / 数据留域 Gateway | Apheris Gateway、Ocean Compute-to-Data | 是，尤其在“计算到数据侧执行”上直接重合 | 高 | 不争“数据不出域”首创，突出动态本体产品合同、typed OSDK、Agent 自动交易和逐 Provider Receipt |
+| 数据空间 Connector / 标准基础设施 | Eclipse Dataspace Components、IDS Connector、Dataspace Protocol | 如果我们做完整 Connector 平台则竞争；若只做 OSDK 执行层则互补 | 中 | 兼容 DSP/ODRL，把自己定位为数据空间内的可执行数据产品层 |
+| 数据交易 / 数据空间运营平台 | Dawex、国内数据交易所技术平台 | 在目录、合约、交易、结算上竞争；在服务型数据产品执行上互补 | 中高 | 避免重做市场和交易门户，优先提供 Agent/OSDK 执行、履约证明和 Provider conformance |
+| Clean Room | AWS、Snowflake、Databricks、Decentriq | 在多方受控分析上竞争；在异构 Provider 与业务 OSDK 上差异明显 | 中 | 强调跨平台、跨组织、业务动作、来源保留，而不是平台内 SQL/Notebook 分析 |
+| Ontology SDK / 企业语义层 | Palantir Foundry OSDK | 在“Ontology 到 typed SDK”上强竞争 | 高 | 定位为开放、多 Provider、可信数据空间兼容，不绑定单一 Foundry 平台 |
+| 隐私计算平台 | SecretFlow 隐语、华为云 TICS 等 | 若我们宣称隐私计算平台则竞争；作为 Runtime 能力则互补 | 中 | 把它们作为 Provider Runtime 内部计算插件，不重复造 MPC/TEE/FL |
+| 数据中台 / 云数据平台 | 华为云、中国电子云、阿里云、传统数据中台厂商 | 在数据治理、目录、API 服务上竞争；在跨主体 Agent 交易层上互补 | 中 | 将数据中台视为 Provider 侧底座，提供上层可信产品 OSDK 和交易执行链 |
 
-## 11. Agent 自动化数据交易的产品创新点
+### 11.2 Apheris Gateway：最接近的直接对手
+
+Apheris Gateway 的公开架构是中心 Orchestrator 连接多个本地 Compute Gateway，数据保管方本地执行计算，原始数据不出域。它与当前 Demo 的 `Gateway -> Provider Runtime` fan-out 拓扑非常接近。
+
+竞争点：
+
+- 都强调数据留在数据方环境。
+- 都强调中心编排、本地执行、策略控制和审计。
+- 都能服务需要跨机构协作的敏感数据分析。
+
+差异点：
+
+- Apheris 更偏数据科学、模型和 Compute Spec 执行；当前方案更偏面向业务应用和 Agent 的数据产品动作。
+- Apheris 的使用者通常仍需要理解任务、数据集、模型或计算规范；当前方案希望让 Agent 调用 `compute_credit_features`、`assess_excavation_risk` 这类业务动作。
+- 当前方案强调本体、分类分级、产品投影共同编译 OSDK，使接口本身随治理规则变化。
+- 当前方案保留逐 Provider 结果和 Receipt，让业务方自行聚合，不让 Gateway 固化银行风控逻辑。
+
+判断：Apheris 是高竞争性对标。我们不能把“本地 Runtime + 中心 Gateway”作为差异点，必须把差异压在“动态本体产品合同 + Agent OSDK + 数据交易履约证明”上。
+
+### 11.3 Eclipse Dataspace Components、IDS Connector 与 Dataspace Protocol：标准基础设施
+
+EDC、IDS Connector 和 Dataspace Protocol 关注 Connector、目录、身份、策略、合同协商、控制面/数据面分离和数据空间互操作。它们回答的是“数据空间怎么互联、怎么签合约、怎么传输或控制数据”。
+
+竞争点：
+
+- 如果我们试图做完整可信数据空间服务平台，就会与这些 Connector/协议实现竞争。
+- 它们已经覆盖目录、合同、策略、身份和数据传输，是客户可能优先采购或采用的基础设施。
+
+差异点：
+
+- 它们本身不解决“一个业务数据产品如何被 Agent 用 typed SDK 调用”。
+- 它们偏协议与基础设施，当前方案偏业务动作执行、OSDK 生成、Runtime 内计算和 Receipt 回传。
+- 我们可以把 Entitlement 映射到 ODRL/DSP 合同，把 Receipt 映射为履约证明上传。
+
+判断：中等竞争、强互补。最佳策略不是重做 EDC/IDS，而是把当前方案设计成可挂接在这些 Connector 和合同协议之后的执行层。
+
+### 11.4 Clean Room 厂商：可用不可见的成熟竞品
+
+AWS Clean Rooms、Snowflake Data Clean Rooms、Databricks Clean Rooms、Decentriq 等已经证明多方数据协作、受控分析、原始数据不直接共享有明确市场需求。
+
+竞争点：
+
+- 它们能解决很多“多方数据不出明细、只出结果”的场景。
+- 云上客户可能优先使用已有 Clean Room，而不是引入新的可信数据产品 Runtime。
+- 它们在安全、权限、审计、隔离和商业成熟度上明显领先当前 Demo。
+
+差异点：
+
+- Clean Room 多数围绕 SQL、模板、Notebook、ML 作业或平台内数据协作，不天然提供动态本体生成的业务 OSDK。
+- Clean Room 往往绑定特定云或数据平台；当前方案目标是跨异构 Provider Runtime。
+- Clean Room 更适合分析协作；当前方案更强调可交易、可授权、可被 Agent 编排的业务数据产品动作。
+
+判断：中等竞争。对于广告、营销、金融联合分析，Clean Room 是强竞品；对于“多个地方数据方各自运行可认证业务产品动作，Agent 自动申请和调用”的场景，我们有差异化空间。
+
+### 11.5 Ocean Compute-to-Data：数据交易范式相近
+
+Ocean Compute-to-Data 提出算法到数据侧执行，以计算访问替代数据下载。这与我们的“OSDK workload 经 Gateway 调 Provider Runtime”在理念上高度接近。
+
+竞争点：
+
+- 都把交易对象从原始数据下载转向受控计算。
+- 都适合强调数据方保留控制权。
+
+差异点：
+
+- Ocean 更偏数据/算法资产市场和 Web3 数据交易机制。
+- 当前方案更偏企业级可信数据空间、数字合约、Provider Runtime、业务 OSDK 和 Agent 自动化。
+- 我们的产品动作由动态本体和分类分级编译，不是任意算法包到数据侧执行。
+
+判断：概念竞争强，企业落地路径差异大。Ocean 证明路线可行，但不直接覆盖我们面向国内可信数据空间和 Agent 网络的产品形态。
+
+### 11.6 Dawex 与数据交易平台：市场与运营层竞争
+
+Dawex 这类数据交换和数据空间平台覆盖目录、参与方、合同、交易、Connector、互操作和数据交换治理。
+
+竞争点：
+
+- 如果我们建设完整数据交易市场、目录、合约、结算和运营平台，会与 Dawex 或国内数据交易技术平台直接竞争。
+- 这些平台在多方参与、交易流程、生态运营和合规流程上更成熟。
+
+差异点：
+
+- 数据交易平台通常把重点放在数据资产上架、供需撮合和交付流程；当前方案把重点放在“合约签完后，Agent 如何可靠调用数据服务并取得履约证明”。
+- OSDK、动态本体编译和 Provider Runtime 可以成为数据交易平台中的服务型产品执行能力。
+
+判断：中高竞争但可合作。建议不从完整交易市场切入，而从“服务型数据产品执行引擎 + Agent 自动交易工作流”切入，作为数据交易平台和可信数据空间的增强组件。
+
+### 11.7 Palantir OSDK：Ontology 到 typed SDK 的强对标
+
+Palantir OSDK 是“Ontology 到 typed SDK”的最强概念对标。它证明开发者可以通过 SDK 调用本体对象、动作和函数，而不是直接访问表结构。
+
+竞争点：
+
+- 如果客户已采用 Foundry，Palantir OSDK 已经提供成熟的本体开发体验。
+- Palantir 在本体治理、权限、应用开发、工作流和企业集成上成熟度很高。
+
+差异点：
+
+- Palantir OSDK 主要依托 Foundry 平台和其内部治理模型。
+- 当前方案目标是开放、可接多 Provider、可接可信数据空间 Connector、可把 OSDK workload 放到客户侧或我方沙箱。
+- 当前方案强调跨组织数据交易、数字合约、Provider Runtime 和逐 Provider Receipt，而不是单一企业平台内应用开发。
+
+判断：高竞争性、强启发性。我们的 OSDK 不能停留在“生成 client 类”，必须证明它服务的是跨组织可信数据产品交易网络，而不是复制 Foundry 应用开发体验。
+
+### 11.8 SecretFlow 隐语、华为云 TICS 等隐私计算平台：更适合作为 Runtime 能力
+
+SecretFlow 隐语、华为云 TICS 等方案在隐私计算、联邦学习、安全多方计算、TEE、密态计算和数据流通技术上有明显积累。
+
+竞争点：
+
+- 如果我们宣称自己是隐私计算或联邦学习平台，就会直接竞争，并且当前 Demo 不占优势。
+- 它们能在强隐私场景提供比当前 Demo 更强的计算安全保证。
+
+差异点：
+
+- 当前方案不应该自建全部隐私计算能力，而应把它们作为 Provider Runtime 可调用的计算后端。
+- OSDK/Gateway/Receipt 解决的是产品合同、Agent 调用、交易履约和跨 Provider 编排，不是替代 MPC/TEE/FL。
+- 对于企业用电征信和长春风险评估，部分动作可以先用本地 SQL/GIS 受控计算，强隐私场景再接入隐私计算。
+
+判断：中等竞争、强互补。产品策略应明确“隐私计算可插拔”，避免把资源消耗在已有成熟团队深耕的底层密码计算。
+
+### 11.9 国内云厂商、数据中台和可信数据空间厂商
+
+华为云、中国电子云、阿里云、运营商、地方数商和数据交易所技术平台，都在数据治理、数据空间、连接器、数据要素、隐私计算和行业平台上布局。
+
+竞争点：
+
+- 它们拥有客户、云资源、数据平台和合规交付能力。
+- 如果我们做全栈可信数据空间平台，会面对强渠道和工程交付竞争。
+- 它们可能很快补足 Agent、SDK 或自动化调用能力。
+
+差异点：
+
+- 大厂平台通常重在基础设施、治理平台和项目交付，未必会把“Agent 自动数据交易 + 产品 OSDK + 逐 Provider Receipt”作为窄而深的产品突破口。
+- awiki.ai 可以从 Agent 网络和数据运营数字员工切入，做轻量、可嵌入、跨平台的服务层。
+- 与云厂商合作时，可把其数据中台、隐私计算、连接器作为底层，把 OSDK 执行层作为上层增值。
+
+判断：平台竞争强，但可以错位。不要一开始做“可信数据空间全平台”，应做“面向 Agent 的可信数据产品执行与运营层”。
+
+### 11.10 对标后的定位收敛
+
+不能作为核心创新宣传的点：
+
+- 数据不出域。
+- 中心 Gateway 调本地 Runtime。
+- 连接器、目录、数字合约、使用控制。
+- Clean Room 式可用不可见。
+- Ontology 到 SDK。
+
+可以作为核心创新组合的点：
+
+1. **Policy-aware OSDK compiler**：本体、分类分级、用途、产品投影共同决定 Agent 可调用接口。
+2. **Agent-native data product contract**：数据产品不只是目录条目，而是可被 Agent 发现、申请、调用、验证的业务动作。
+3. **Provider-neutral fan-out**：同一 OSDK 方法调用多个 Provider Runtime，结果保留来源和独立 Receipt。
+4. **Receipt as settlement evidence**：执行凭证不仅用于审计，还可以成为计量计费、履约证明和争议处理依据。
+5. **Data operations agents**：Provider 侧用 Agent 改进数据产品生产、质量治理、上架、授权审批和履约监测。
+
+因此，我们与 Apheris、Palantir、Clean Room、Dawex 有明确竞争面，但竞争不是“同一功能完全重叠”。更合理的市场切口是：利用可信数据空间和数据中台已有基础设施，提供 Agent 时代的数据产品自动交易和可信执行层。
+
+## 12. Agent 自动化数据交易的产品创新点
 
 可信数据空间标准中已有“数据产品申请、合约签订、控制策略下发、数据交付、履约证明”的流程。但流程通常面向门户、连接器和人工操作。Agent 时代的增量机会是把它自动化、可编排、可验证。
 
@@ -362,11 +677,11 @@ flowchart LR
 
 这与我们前面讨论的“数据交易服务数字员工部门”一致：数据提供方通常没有足够专人执行全流程，Agent 可以承担数据产品生产、质量检查、合同响应、履约监测和异常处理的协同工作。
 
-## 12. 对 awiki.ai 的结合方向
+## 13. 对 awiki.ai 的结合方向
 
 如果 awiki.ai 希望拓展智能体网络市场，本方案可以作为一个垂直产品方向：
 
-### 12.1 Agent 网络中的可信数据产品 Skill
+### 13.1 Agent 网络中的可信数据产品 Skill
 
 将每个可信数据产品发布为 Agent Skill：
 
@@ -374,7 +689,7 @@ flowchart LR
 - Skill 内部绑定 Product OSDK。
 - Agent 不需要理解底层数据平台，只需理解可调用的数据产品动作。
 
-### 12.2 客户侧 Agent + 服务侧 Agent 协同
+### 13.2 客户侧 Agent + 服务侧 Agent 协同
 
 客户侧 Agent：
 
@@ -394,7 +709,7 @@ flowchart LR
 - 监控履约和异常。
 - 生成数据产品运营报告。
 
-### 12.3 异步通知与交易履约
+### 13.3 异步通知与交易履约
 
 数据交易很多不是同步 API 能完成的。应引入异步事件：
 
@@ -408,11 +723,11 @@ flowchart LR
 
 这会把 awiki.ai 的 Agent 网络从“对话和工具调用”推进到“跨组织数据交易工作流”。
 
-## 13. 后续是否只剩工程复杂度
+## 14. 后续是否只剩工程复杂度
 
 结论要分层说。
 
-### 13.1 理论方向不存在明显不可实现风险
+### 14.1 理论方向不存在明显不可实现风险
 
 不存在明显理论不可实现风险，原因是：
 
@@ -424,7 +739,7 @@ flowchart LR
 
 当前方案把这些能力组合到“Agent 可自动调用的数据产品 OSDK”上，没有违反现有技术边界。
 
-### 13.2 但不是普通 CRUD 工程量
+### 14.2 但不是普通 CRUD 工程量
 
 后续不是“写几个接口就生产可用”，而是中高复杂度工程系统：
 
@@ -443,7 +758,7 @@ flowchart LR
 
 > 后续主要是可分解的工程、安全、合规和运营复杂度，不是理论技术路线不可实现风险。
 
-### 13.3 需要避免的错误判断
+### 14.3 需要避免的错误判断
 
 不能说：
 
@@ -458,7 +773,7 @@ flowchart LR
 - 门槛在 OSDK 背后的动态本体编译、策略、Runtime、连接器、凭证和交易运营。
 - Demo 已验证核心路线，生产化需要系统工程。
 
-## 14. 推荐下一阶段实施路线
+## 15. 推荐下一阶段实施路线
 
 ### Phase 1：可信数据空间兼容模型
 
@@ -528,7 +843,7 @@ flowchart LR
 
 价值：形成与普通数据空间、数据交易平台和数据中台不同的 Agent 时代差异化入口。
 
-## 15. 最终判断
+## 16. 最终判断
 
 当前方案与可信数据空间标准一致，可以利用数据元件、数据产品、连接器、数字合约、使用控制和履约证明这些概念，不存在根本冲突。
 
