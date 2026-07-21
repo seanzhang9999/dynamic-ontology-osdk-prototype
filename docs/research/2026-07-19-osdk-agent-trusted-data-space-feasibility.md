@@ -424,6 +424,40 @@ sequenceDiagram
 - 建设 Provider Registry 和健康探测，支持动态路由、灰度和故障隔离。
 - 增加 OpenTelemetry trace、结构化审计日志和交易计量事件。
 
+### 8.5 Demo 程序运行截图与说明
+
+以下截图来自当前本地运行的 Demo Console，用于说明报告中的机制不是静态概念图，而是已经在原型程序中形成了可交互的运行链路。
+
+**截图 1：Agent 价值闭环与企业用电征信工作台。**
+页面顶部展示 Agent 价值闭环，左侧是前端查询工作台和动态本体内容，右侧是实时执行情况区域。用户只选择企业并发起产品动作，不接触底层 SQL、连接串或 Provider 表结构。
+
+![Agent 价值闭环与企业用电征信工作台](../assets/research/osdk-agent-trusted-data-space-feasibility/demo-01-power-workbench.png)
+
+**截图 2：企业用电征信执行链路。**
+点击“查询征信”后，右侧保留执行步骤，展示 Agent 接收意图、读取产品目录、申请授权、调用 Product OSDK、Provider Runtime 本地计算、返回结果和 Receipt 的全过程。
+
+![企业用电征信执行链路](../assets/research/osdk-agent-trusted-data-space-feasibility/demo-02-power-execution.png)
+
+**截图 3：长春开挖风险产品。**
+施工方只提交工程 ID、开挖深度和施工方式，Runtime 在长春数据域内使用管线坐标和规则进行风险评估，外部只得到风险等级、影响类型、建议和凭证，不暴露精确坐标。
+
+![长春开挖风险产品](../assets/research/osdk-agent-trusted-data-space-feasibility/demo-06-changchun-risk.png)
+
+**截图 4：动态本体运维。**
+该页面展示本体、产品投影、字段分类分级与 OSDK 生成结果。演示重点是：当分类分级变化后，Product Compiler 会重新生成产品接口，使 OSDK 暴露面随治理规则收缩。
+
+![动态本体运维](../assets/research/osdk-agent-trusted-data-space-feasibility/demo-03-ontology-ops.png)
+
+**截图 5：远程 OSDK 部署视图。**
+该页面展示客户侧 OSDK workload、可信数据空间网关、我方 Product Runtime、Receipt 与联合计算扩展之间的信任边界，并给出实际调用代码和受控请求 envelope。
+
+![远程 OSDK 部署视图](../assets/research/osdk-agent-trusted-data-space-feasibility/demo-04-deployment-view.png)
+
+**截图 6：远程 OSDK 经 Gateway 调用后的结果。**
+点击“模拟网关调用”后，页面展示 `succeeded` 网关状态、征信评分、Receipt 编号，以及右侧 Gateway 校验身份、产品契约、action 参数、授权和路由的执行明细。
+
+![远程 OSDK 经 Gateway 调用后的结果](../assets/research/osdk-agent-trusted-data-space-feasibility/demo-05-gateway-result.png)
+
 ## 9. 当前 Demo 的技术验证完整度
 
 | 能力域 | 当前完整度 | 说明 |

@@ -370,7 +370,7 @@ def add_code_block(document: Document, code: str) -> None:
     run.font.color.rgb = RGBColor(40, 48, 60)
 
 
-def add_picture_scaled(document: Document, image_path: Path, *, max_width: float = 6.6, max_height: float = 8.6) -> None:
+def add_picture_scaled(document: Document, image_path: Path, *, max_width: float = 6.6, max_height: float = 8.6):
     with Image.open(image_path) as image:
         width_px, height_px = image.size
     aspect = width_px / height_px
@@ -380,7 +380,32 @@ def add_picture_scaled(document: Document, image_path: Path, *, max_width: float
         target_h = max_height
         target_w = target_h * aspect
     document.add_picture(str(image_path), width=Inches(target_w), height=Inches(target_h))
-    document.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    paragraph = document.paragraphs[-1]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    return paragraph
+
+
+def resolve_image_path(raw_path: str) -> Path:
+    path = Path(raw_path.strip())
+    if path.is_absolute():
+        return path
+    source_relative = (SOURCE.parent / path).resolve()
+    if source_relative.exists():
+        return source_relative
+    return (ROOT / path).resolve()
+
+
+def add_image(document: Document, alt: str, raw_path: str) -> None:
+    image_path = resolve_image_path(raw_path)
+    if not image_path.exists():
+        add_paragraph(document, f"[图片缺失] {alt}: {raw_path}")
+        return
+    image_paragraph = add_picture_scaled(document, image_path, max_width=6.7, max_height=5.0)
+    image_paragraph.paragraph_format.keep_with_next = True
+    caption = document.add_paragraph()
+    caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = caption.add_run(clean_inline(alt))
+    set_run_font(run, size=9, bold=True)
 
 
 def split_table_row(line: str) -> list[str]:
@@ -408,11 +433,12 @@ def add_table(document: Document, rows: list[list[str]]) -> None:
     document.add_paragraph()
 
 
-def add_paragraph(document: Document, text: str, style: str | None = None) -> None:
+def add_paragraph(document: Document, text: str, style: str | None = None):
     paragraph = document.add_paragraph(style=style)
     paragraph.paragraph_format.space_after = Pt(5)
     run = paragraph.add_run(clean_inline(text))
     set_run_font(run, size=10)
+    return paragraph
 
 
 def build_docx() -> None:
@@ -455,6 +481,17 @@ def build_docx() -> None:
                 rows.append(split_table_row(lines[i]))
                 i += 1
             add_table(document, rows)
+            continue
+        image = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)$", stripped)
+        if image:
+            add_image(document, image.group(1), image.group(2))
+            i += 1
+            continue
+        if stripped.startswith("**截图 "):
+            document.add_page_break()
+            paragraph = add_paragraph(document, stripped)
+            paragraph.paragraph_format.keep_with_next = True
+            i += 1
             continue
         heading = re.match(r"^(#{1,4})\s+(.+)$", stripped)
         if heading:
